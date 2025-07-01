@@ -1,4 +1,4 @@
-use crate::bimapid::{ClientId, ClientMapper, FieldMap};
+use crate::bimapid::{ClientMapper, FieldMap};
 use crate::change::{ChangeData, ChangeId, ChangeStore};
 use crate::decoder::{Decode, DecodeContext, Decoder};
 use crate::doc::DocId;

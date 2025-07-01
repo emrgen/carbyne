@@ -243,7 +243,7 @@ fn encode_item(e: &mut EncoderV1, cx: &mut EncodeContext, value: &ItemData) {
     let kind_flags = ItemKindFlags::from(&value.kind).bits();
     e.u8(kind_flags);
 
-    let mut flags = ItemSideFlags::from(&value.side).bits() << 4;
+    let mut flags = 0;
 
     // let is_root = matches!(value.content, Content::Doc(_));
     if !matches!(value.content, Content::Null) {
@@ -288,7 +288,7 @@ fn encode_item(e: &mut EncoderV1, cx: &mut EncodeContext, value: &ItemData) {
 
     // if side is none, that means we are using yata
     // else we are using fugue
-    if value.side.is_none() && value.left_id.is_none() {
+    if value.left_id.is_none() {
         if let Some(parent_id) = value.parent_id {
             parent_id.encode(e, cx);
         }
@@ -355,7 +355,6 @@ fn decode_item(d: &mut DecoderV1, ctx: &DecodeContext) -> Result<ItemData, Strin
         kind,
         content,
         field,
-        side,
         left_id,
         parent_id,
         right_id,

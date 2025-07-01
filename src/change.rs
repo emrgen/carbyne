@@ -1,4 +1,4 @@
-use crate::bimapid::{ClientId, ClientMap, ClientMapper};
+use crate::bimapid::{ClientMap, ClientMapper};
 use crate::dag::{ChangeDag, ChangeNodeFlags};
 use crate::decoder::{Decode, DecodeContext, Decoder};
 use crate::delete::DeleteItem;
@@ -10,7 +10,7 @@ use crate::persist::DocStoreData;
 use crate::store::{
     ClientStore, DeleteItemStore, ItemDataStore, ItemStore, TypeStore, WeakStoreRef,
 };
-use crate::{Client, ClientState, ClockTick, Content, Diff, Id, ItemData, Type};
+use crate::{Client, ClientId, ClientState, ClockTick, Content, Diff, Id, ItemData, Type};
 use btree_slab::BTreeMap;
 use hashbrown::hash_map::Iter;
 use hashbrown::{HashMap, HashSet};

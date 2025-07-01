@@ -1,4 +1,4 @@
-use crate::bimapid::{ClientId, Field, FieldId, FieldMap};
+use crate::bimapid::{Field, FieldId, FieldMap};
 use crate::change::{ChangeId, ChangeStore};
 use crate::dag::{ChangeDag, ChangeNode};
 use crate::decoder::{Decode, DecodeContext, Decoder};
@@ -12,7 +12,7 @@ use crate::id_store::ClientIdStore;
 use crate::item::{ItemData, ItemKind, ItemRef};
 use crate::state::ClientState;
 use crate::types::Type;
-use crate::{print_yaml, Client};
+use crate::{print_yaml, Client, ClientId};
 use bimap::BiMap;
 use hashbrown::{HashMap, HashSet};
 use serde::ser::SerializeStruct;

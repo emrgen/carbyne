@@ -1,7 +1,6 @@
 use hashbrown::HashMap;
 
-use crate::bimapid::ClientId;
-use crate::ClockTick;
+use crate::{ClientId, ClockTick};
 
 pub(crate) type VersionId = u64;
 

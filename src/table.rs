@@ -1,5 +1,4 @@
-use crate::bimapid::ClientId;
-use crate::{Content, Id, ItemData};
+use crate::{ClientId, Content, Id, ItemData};
 use serde::{Deserialize, Serialize};
 use serde_columnar::columnar;
 use std::default::Default;

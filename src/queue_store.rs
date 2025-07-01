@@ -1,13 +1,12 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 
-use serde::Serialize;
-
-use crate::bimapid::ClientId;
 use crate::decoder::{Decode, DecodeContext, Decoder};
 use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::id::{Id, WithId};
 use crate::item::ItemData;
+use crate::ClientId;
+use serde::Serialize;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub(crate) struct ClientQueueStore<T: QueryStoreEntry> {

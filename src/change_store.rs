@@ -1,9 +1,8 @@
-use crate::bimapid::ClientId;
 use crate::decoder::Decode;
 use crate::encoder::Encode;
 use crate::id::{IdComp, WithId, WithIdRange};
 use crate::store::ItemStoreEntry;
-use crate::Id;
+use crate::{ClientId, Id};
 use hashbrown::{HashMap, HashSet};
 use serde::Serialize;
 use std::collections::hash_map::Iter;

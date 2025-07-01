@@ -7,13 +7,15 @@ use std::ops::{Add, Sub};
 use serde::{Serialize, Serializer};
 use uuid::Uuid;
 
-use crate::bimapid::{ClientId, ClientMap, ClientMapper};
+use crate::bimapid::{ClientMap, ClientMapper};
 use crate::change::ChangeId;
 use crate::decoder::{Decode, DecodeContext, Decoder};
 use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::hash::calculate_hash;
 use crate::Type;
 
+/// ClientId is an u32 id that is used to identify a client
+pub type ClientId = u32;
 /// 32 bits Lamport Clock tick
 pub type ClockTick = u32;
 

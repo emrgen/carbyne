@@ -460,7 +460,7 @@ impl Item {
 
         // proxy and move items are considered deleted if the target is deleted
         match self.kind {
-            ItemKind::Proxy | ItemKind::Move => {
+            ItemKind::Move => {
                 if let Some(ref target) = self.target {
                     target.is_deleted()
                 } else {
@@ -825,7 +825,6 @@ pub struct ItemData {
     pub(crate) parent_id: Option<Id>,
     pub(crate) left_id: Option<Id>,
     pub(crate) right_id: Option<Id>,
-    pub(crate) side: ItemSide,
     pub(crate) field: Option<FieldId>,
     pub(crate) content: Content,
 }
@@ -838,7 +837,6 @@ impl ItemData {
             parent_id: None,
             left_id: None,
             right_id: None,
-            side: ItemSide::None,
             field: None,
             content: Content::Null,
         }
@@ -1071,10 +1069,9 @@ pub(crate) enum ItemKind {
     Text,
     String,
     Atom,
-    Proxy,
     Move,
+    FlatMove,
     Mark,
-    PlaintText,
 }
 
 impl ItemKind {
@@ -1099,10 +1096,6 @@ impl ItemKind {
         self == &Self::Atom
     }
 
-    pub(crate) fn is_proxy(&self) -> bool {
-        self == &Self::Proxy
-    }
-
     #[inline]
     pub(crate) fn is_move(&self) -> bool {
         self == &Self::Move
@@ -1110,10 +1103,6 @@ impl ItemKind {
 
     pub(crate) fn is_mark(&self) -> bool {
         self == &Self::Mark
-    }
-
-    pub(crate) fn is_plaintext(&self) -> bool {
-        self == &Self::PlaintText
     }
 }
 
@@ -1124,10 +1113,9 @@ bitflags! {
         const TEXT = 0x2;
         const STRING = 0x3;
         const ATOM = 0x4;
-        const PROXY = 0x5;
-        const MOVE = 0x6;
+        const MOVE = 0x5;
+        const FlatMove = 0x6;
         const MARK = 0x7;
-        const PLAINTEXT = 0x8;
     }
 }
 
@@ -1139,10 +1127,9 @@ impl From<ItemKind> for ItemKindFlags {
             ItemKind::Text => Self::TEXT,
             ItemKind::String => Self::STRING,
             ItemKind::Atom => Self::ATOM,
-            ItemKind::Proxy => Self::PROXY,
             ItemKind::Move => Self::MOVE,
+            ItemKind::FlatMove => Self::MOVE,
             ItemKind::Mark => Self::MARK,
-            ItemKind::PlaintText => Self::PLAINTEXT,
         }
     }
 }
@@ -1155,10 +1142,9 @@ impl From<&ItemKind> for ItemKindFlags {
             ItemKind::List => Self::LIST,
             ItemKind::Text => Self::TEXT,
             ItemKind::String => Self::STRING,
-            ItemKind::Proxy => Self::PROXY,
+            ItemKind::FlatMove => Self::FlatMove,
             ItemKind::Move => Self::MOVE,
             ItemKind::Mark => Self::MARK,
-            ItemKind::PlaintText => Self::PLAINTEXT,
         }
     }
 }
@@ -1172,10 +1158,9 @@ impl From<ItemKindFlags> for ItemKind {
             0x02 => ItemKind::Text,
             0x03 => ItemKind::String,
             0x04 => ItemKind::Atom,
-            0x05 => ItemKind::Proxy,
-            0x06 => ItemKind::Move,
+            0x05 => ItemKind::Move,
+            0x06 => ItemKind::FlatMove,
             0x07 => ItemKind::Mark,
-            0x08 => ItemKind::PlaintText,
             _ => ItemKind::Atom,
         }
     }
@@ -1189,10 +1174,9 @@ impl Display for ItemKind {
             Self::Text => write!(f, "text"),
             Self::String => write!(f, "string"),
             Self::Atom => write!(f, "atom"),
-            Self::Proxy => write!(f, "proxy"),
             Self::Move => write!(f, "move"),
+            Self::FlatMove => write!(f, "flat-move"),
             Self::Mark => write!(f, "mark"),
-            Self::PlaintText => write!(f, "plaintext"),
         }
     }
 }

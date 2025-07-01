@@ -1,9 +1,9 @@
-use crate::bimapid::{ClientId, ClientMap, ClientMapper};
+use crate::bimapid::{ClientMap, ClientMapper};
 use crate::change::ChangeId;
 use crate::change_btree::BTree;
 use crate::hash::calculate_hash;
 use crate::id::WithId;
-use crate::{ClockTick, Id};
+use crate::{ClientId, ClockTick, Id};
 use btree_slab::{BTreeMap, BTreeSet};
 use fractional_index::FractionalIndex;
 use hashbrown::{HashMap, HashSet};

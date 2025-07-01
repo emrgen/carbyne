@@ -4,18 +4,17 @@ use std::collections::BTreeMap;
 use std::default::Default;
 use std::time::Duration;
 
-use crate::bimapid::ClientId;
 use crate::crdt_yata::{integrate_yata, remove_yata};
 use crate::delete::DeleteItem;
 use crate::diff::Diff;
 use crate::id::WithId;
 use crate::item::{ItemData, ItemRef, Linked, StartEnd};
-use crate::print_yaml;
 use crate::queue_store::ClientQueueStore;
 use crate::store::{
     ClientStore, DocStore, ItemDataStore, PendingStore, ReadyStore, TypeStore, WeakStoreRef,
 };
 use crate::types::Type;
+use crate::{print_yaml, ClientId};
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Tx {
@@ -134,9 +133,9 @@ impl Tx {
 
                     if progress {
                         if let Some(data) = self.pending.pop_first(&client_id) {
-                            stage.insert(*client_id, data);
+                            stage.insert(client_id.clone(), data);
                         } else {
-                            stage.remove(client_id);
+                            stage.remove(&client_id);
                         }
                         break;
                     }

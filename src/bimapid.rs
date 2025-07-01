@@ -1,7 +1,7 @@
 use crate::decoder::{Decode, DecodeContext, Decoder};
 use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::mark::Mark;
-use crate::Client;
+use crate::{Client, ClientId};
 use bimap::BiMap;
 use hashbrown::HashMap;
 use serde::{Serialize, Serializer};
@@ -11,9 +11,6 @@ use std::hash::Hash;
 use std::ops::Add;
 use std::rc::Rc;
 use uuid::Uuid;
-
-/// ClientId is an u32 id that is used to identify a client
-pub type ClientId = u32;
 
 pub(crate) trait BiMapEntry:
     Encode + Decode + Clone + Default + Eq + PartialEq + Hash
@@ -312,10 +309,6 @@ impl ClientMap {
     pub(crate) fn merge(&self, other: &ClientMap) -> Self {
         let map = self.map.merge(&other.map);
         ClientMap { map }
-    }
-
-    pub(crate) fn entries(&self) -> impl Iterator<Item = (&Client, &u32)> {
-        self.map.map.iter()
     }
 }
 

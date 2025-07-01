@@ -26,6 +26,7 @@ pub use crate::utils::*;
 
 use crate::index::*;
 
+mod bimap;
 mod bimapid;
 mod change;
 mod change_btree;
