@@ -127,7 +127,6 @@ pub(crate) struct DocStore {
     pub(crate) moves: HashMap<Id, Vec<Type>>,
 
     pub(crate) items: TypeStore,
-    pub(crate) movers: TypeStore,
     pub(crate) deletes: DeleteItemStore,
 
     pub(crate) pending: PendingStore,

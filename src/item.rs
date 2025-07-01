@@ -1196,7 +1196,7 @@ impl WithId for ItemData {
 
 #[derive(Debug, Clone)]
 pub(crate) enum ItemKey {
-    Number(u32),
+    Number(usize),
     String(String),
 }
 
@@ -1223,13 +1223,13 @@ impl From<String> for ItemKey {
 
 impl From<usize> for ItemKey {
     fn from(n: usize) -> Self {
-        Self::Number(n as u32)
+        Self::Number(n)
     }
 }
 
 impl From<u32> for ItemKey {
     fn from(n: u32) -> Self {
-        Self::Number(n as u32)
+        Self::Number(n as usize)
     }
 }
 

@@ -658,7 +658,7 @@ mod test {
             if size == 0 {
                 list.append(text);
             } else {
-                let offset = random::<u32>() % size;
+                let offset = random::<usize>() % size;
                 list.insert(offset, text);
             }
         }

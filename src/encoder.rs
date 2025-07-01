@@ -9,6 +9,7 @@ pub trait Encoder: Clone {
     fn u16(&mut self, value: u16);
     fn u32(&mut self, value: u32);
     fn u64(&mut self, value: u64);
+    fn u128(&mut self, value: u128);
     fn uuid(&mut self, value: &[u8]);
     fn string(&mut self, value: &str);
     fn bytes(&mut self, value: &[u8]);

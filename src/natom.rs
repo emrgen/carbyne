@@ -12,7 +12,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 #[derive(Clone)]
-pub struct AItemData(u128);
+pub struct AItem(u128);
 
 const M4: u128 = (1 << 4) - 1;
 const M8: u128 = (1 << 8) - 1;
@@ -22,59 +22,59 @@ const M40: u128 = (1 << 40) - 1;
 const U8: u32 = (1 << 8) - 1;
 const U20: u32 = (1 << 20) - 1;
 
-impl AItemData {
-    fn new(id: Id) -> AItemData {
-        let mut data = AItemData(0);
+impl AItem {
+    pub(crate) fn new(id: Id) -> AItem {
+        let mut data = AItem(0);
         data.with_id(id)
     }
 
-    fn with_kind(mut self, kind: ItemKind) -> AItemData {
+    pub(crate) fn with_kind(mut self, kind: ItemKind) -> AItem {
         self.0 |= ItemKindFlags::from(kind).bits() as u128;
         self
     }
 
-    fn with_id(mut self, id: Id) -> AItemData {
+    pub(crate) fn with_id(mut self, id: Id) -> AItem {
         self.0 |= ((((id.client & U20) << 20) | (id.clock & U20)) as u128) << 8;
         self
     }
 
-    fn with_left(mut self, id: Id) -> AItemData {
+    pub(crate) fn with_left(mut self, id: Id) -> AItem {
         self.0 |= ((((id.client & U20) << 20) | (id.clock & U20)) as u128) << 48;
         self.0 |= (1 << 5);
         self
     }
 
-    fn with_right(mut self, id: Id) -> AItemData {
+    pub(crate) fn with_right(mut self, id: Id) -> AItem {
         self.0 |= ((((id.client & U20) << 20) | (id.clock & U20)) as u128) << 88;
         self.0 |= (1 << 6);
         self
     }
 
-    fn with_field(mut self, field: FieldId) -> AItemData {
+    pub(crate) fn with_field(mut self, field: FieldId) -> AItem {
         self.0 |= ((field & U20) as u128) << 88;
         self.0 |= (1 << 4);
         self
     }
 
     #[inline]
-    fn kind(&self) -> ItemKind {
+    pub(crate) fn kind(&self) -> ItemKind {
         ItemKindFlags::from_bits((self.0 & M4) as u8)
             .unwrap()
             .into()
     }
 
     #[inline]
-    fn flag(&self) -> u8 {
+    pub(crate) fn flag(&self) -> u8 {
         (self.0 & M8) as u8
     }
 
     #[inline]
-    fn id(&self) -> Id {
-        AItemData::decode_id(self.0 >> 8)
+    pub(crate) fn id(&self) -> Id {
+        AItem::decode_id(self.0 >> 8)
     }
 
     #[inline]
-    fn left_id(&self) -> Option<Id> {
+    pub(crate) fn left_id(&self) -> Option<Id> {
         if self.has_left() {
             return Some(Self::decode_id(self.0 >> 48));
         }
@@ -83,7 +83,7 @@ impl AItemData {
     }
 
     #[inline]
-    fn right_id(&self) -> Option<Id> {
+    pub(crate) fn right_id(&self) -> Option<Id> {
         if self.has_right() {
             return Some(Self::decode_id(self.0 >> 88));
         }
@@ -92,7 +92,7 @@ impl AItemData {
     }
 
     #[inline]
-    fn field(&self) -> Option<FieldId> {
+    pub(crate) fn field_id(&self) -> Option<FieldId> {
         if self.has_field() {
             return Some(((self.0 >> 48) & 20) as FieldId);
         }
@@ -100,18 +100,36 @@ impl AItemData {
         None
     }
 
+    pub(crate) fn field(&self, store: &WeakStoreRef) -> Option<String> {
+        if let Some(field) = self.field_id() {
+            return store
+                .upgrade()
+                .map(|store| {
+                    store
+                        .borrow()
+                        .fields
+                        .get_field(&field)
+                        .cloned()
+                        .map(|id| id.to_string())
+                })
+                .flatten();
+        }
+
+        None
+    }
+
     #[inline]
-    fn has_field(&self) -> bool {
+    pub(crate) fn has_field(&self) -> bool {
         self.flag() & (1 << 4) != 0
     }
 
     #[inline]
-    fn has_left(&self) -> bool {
+    pub(crate) fn has_left(&self) -> bool {
         self.flag() & (1 << 5) != 0
     }
 
     #[inline]
-    fn has_right(&self) -> bool {
+    pub(crate) fn has_right(&self) -> bool {
         self.flag() & (1 << 6) != 0
     }
 
@@ -121,22 +139,31 @@ impl AItemData {
     }
 }
 
-impl Debug for AItemData {
+impl Debug for AItem {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         todo!()
     }
+}
+
+#[derive(Clone)]
+pub struct AItemData {
+    item: AItem,
+    data: Content,
 }
 
 // Atom is a holds a fixed Content
 #[derive(Debug)]
 pub struct InnerAtom {
     pub(crate) store: WeakStoreRef,
-    pub(crate) data: AItemData,
+    pub(crate) data: AItem,
+    pub(crate) parent: Option<Type>,
     pub(crate) content: Content,
 }
 
+impl InnerAtom {}
+
 impl Deref for InnerAtom {
-    type Target = AItemData;
+    type Target = AItem;
 
     fn deref(&self) -> &Self::Target {
         &self.data
@@ -150,11 +177,12 @@ pub struct NAtom {
 
 impl NAtom {
     pub(crate) fn new(id: Id, content: Content, store: WeakStoreRef) -> Self {
-        let data = AItemData::new(id).with_kind(ItemKind::Atom);
+        let data = AItem::new(id).with_kind(ItemKind::Atom);
         Self {
             inner: Rc::new(RefCell::new(InnerAtom {
                 store,
                 data,
+                parent: None,
                 content,
             })),
         }
@@ -178,6 +206,10 @@ impl NAtom {
     #[inline]
     pub(crate) fn delete(&self) {
         //self.item.delete(1);
+    }
+
+    pub(crate) fn set_parent(&self, parent: Option<Type>) {
+        self.inner.borrow_mut().parent = parent;
     }
 
     #[inline]
@@ -248,14 +280,14 @@ mod tests {
 
     #[test]
     fn test_create_a_item_data() {
-        let data = AItemData::new(Id::new(1, 1))
+        let data = AItem::new(Id::new(1, 1))
             .with_kind(ItemKind::Atom)
             .with_left(Id::new(2, 2))
             .with_right(Id::new(3, 3));
 
         println!("size: {}", size_of::<WeakStoreRef>());
         println!("size: {}", size_of::<InnerAtom>());
-        println!("size: {}", size_of::<AItemData>());
+        println!("size: {}", size_of::<AItem>());
         println!("size: {}", size_of::<Content>());
         assert_eq!(data.kind(), ItemKind::Atom);
         assert_eq!(data.id(), Id::new(1, 1));

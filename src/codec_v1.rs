@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::ops::Deref;
 
 use crate::decoder::{Decode, DecodeContext, Decoder};
@@ -71,6 +72,12 @@ impl Encoder for EncoderV1 {
         self.ensure_capacity(8);
         self.buf.extend_from_slice(&value.to_be_bytes());
         self.pos += 8;
+    }
+
+    fn u128(&mut self, value: u128) {
+        self.ensure_capacity(16);
+        self.buf.extend_from_slice(&value.to_be_bytes());
+        self.pos += 16;
     }
 
     fn uuid(&mut self, value: &[u8]) {
@@ -196,7 +203,33 @@ impl Decoder for DecoderV1 {
             self.buf[self.pos + 6],
             self.buf[self.pos + 7],
         ]);
+
         self.pos += 8;
+        Ok(value)
+    }
+
+    fn u128(&mut self) -> Result<u128, String> {
+        self.ensure_capacity(16);
+        let value = u128::from_be_bytes([
+            self.buf[self.pos],
+            self.buf[self.pos + 1],
+            self.buf[self.pos + 2],
+            self.buf[self.pos + 3],
+            self.buf[self.pos + 4],
+            self.buf[self.pos + 5],
+            self.buf[self.pos + 6],
+            self.buf[self.pos + 7],
+            self.buf[self.pos + 8],
+            self.buf[self.pos + 9],
+            self.buf[self.pos + 10],
+            self.buf[self.pos + 11],
+            self.buf[self.pos + 12],
+            self.buf[self.pos + 13],
+            self.buf[self.pos + 14],
+            self.buf[self.pos + 15],
+        ]);
+
+        self.pos += 16;
         Ok(value)
     }
 

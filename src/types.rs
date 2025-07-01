@@ -36,12 +36,6 @@ pub enum Type {
 }
 
 impl Type {
-    pub(crate) fn data(&self) -> ItemData {
-        self.item_ref().borrow().data.clone()
-    }
-}
-
-impl Type {
     pub(crate) fn replace(&self, items: (Type, Type)) {
         let store = self.store().upgrade().unwrap();
         let mut store = store.borrow_mut();
@@ -134,6 +128,10 @@ impl Type {
             // Type::Doc(n) => Some(n.clone()),
             _ => None,
         }
+    }
+
+    pub(crate) fn data(&self) -> ItemData {
+        self.item_ref().borrow().data.clone()
     }
 
     #[inline]
@@ -290,45 +288,6 @@ impl Type {
         parent.unwrap().on_insert(&item);
     }
 
-    pub(crate) fn item_ref(&self) -> ItemRef {
-        match self {
-            Type::List(n) => n.item_ref(),
-            Type::Map(n) => n.item_ref(),
-            Type::Text(n) => n.item_ref(),
-            Type::String(n) => n.item_ref(),
-            Type::Atom(n) => n.item_ref(),
-            Type::Move(n) => n.item_ref(),
-            Type::Mark(n) => n.item_ref(),
-            // Type::Doc(n) => n.root.item_ref(),
-            Type::Identity => panic!("item_ref: not implemented"),
-        }
-    }
-
-    // get the container of the item
-    // the container contains the item
-    // pub(crate) fn container(&self) -> Option<Type> {
-    //     if let Some(container_id) = self.container_id() {
-    //         let typ = self.store().upgrade().and_then(|store| {
-    //             let container = store.borrow().items.get(&container_id);
-    //             return container.map_or(None, |container| Some(container.clone()));
-    //         });
-    //
-    //         return typ;
-    //     }
-    //
-    //     None
-    // }
-
-    // #[inline]
-    // pub(crate) fn container_id(&self) -> Option<Id> {
-    //     self.item_ref().borrow().container.clone()
-    // }
-    //
-    // #[inline]
-    // pub(crate) fn set_container_id(&self, container_id: impl Into<Option<Id>>) {
-    //     self.item_ref().borrow_mut().container = container_id.into();
-    // }
-
     #[inline]
     pub(crate) fn is_moved(&self) -> bool {
         self.item_ref().borrow().is_moved()
@@ -401,7 +360,7 @@ impl Type {
     }
 
     #[inline]
-    pub fn size(&self) -> u32 {
+    pub fn size(&self) -> usize {
         match self {
             Type::List(n) => n.size(),
             Type::Map(n) => n.size(),
@@ -726,7 +685,18 @@ impl Serialize for Type {
 
 impl Encode for Type {
     fn encode<T: Encoder>(&self, e: &mut T, ctx: &mut EncodeContext) {
-        e.item(ctx, &self.item_ref().borrow().data.clone());
+        match &self {
+            Type::List(n) => n.encode(e, ctx),
+            // Type::Map(n) => n.id(),
+            // Type::Text(n) => n.id(),
+            // Type::String(n) => n.id(),
+            // Type::Atom(n) => n.id(),
+            // Type::Move(n) => n.id(),
+            // Type::Mark(n) => n.id(),
+            Type::Identity => panic!("id: not implemented for identity"),
+            _ => {}
+        }
+        // e.item(ctx, &self.item_ref().borrow().data.clone());
     }
 }
 
@@ -740,7 +710,16 @@ impl Decode for Type {
 impl WithId for Type {
     #[inline]
     fn id(&self) -> Id {
-        self.item_ref().id()
+        match &self {
+            Type::List(n) => n.id(),
+            Type::Map(n) => n.id(),
+            Type::Text(n) => n.id(),
+            Type::String(n) => n.id(),
+            Type::Atom(n) => n.id(),
+            Type::Move(n) => n.id(),
+            Type::Mark(n) => n.id(),
+            Type::Identity => panic!("id: not implemented for identity"),
+        }
     }
 }
 
@@ -782,16 +761,7 @@ impl From<NList> for Type {
 
 impl From<NMap> for Type {
     fn from(n: NMap) -> Self {
-        // if let Content::Doc(d) = n.content() {
-        //     Type::Doc(Doc::new(DocMeta {
-        //         id: d.id,
-        //         created_at: d.created_at,
-        //         crated_by: Client::from(d.created_by),
-        //         props: d.props.into_kv_map(),
-        //     }))
-        // } else {
         Self::Map(n)
-        // }
     }
 }
 
@@ -822,38 +792,6 @@ impl From<NMove> for Type {
 impl From<NMark> for Type {
     fn from(n: NMark) -> Self {
         Self::Mark(n)
-    }
-}
-
-impl From<ItemRef> for Type {
-    fn from(item: ItemRef) -> Self {
-        let kind = item.borrow().kind.clone();
-        match kind {
-            ItemKind::List => Self::List(item.into()),
-            ItemKind::Map => Self::Map(item.into()),
-            ItemKind::Text => Self::Text(item.into()),
-            ItemKind::String => Self::String(item.into()),
-            ItemKind::Atom => Self::Atom(item.into()),
-            ItemKind::Move => Self::Move(item.into()),
-            ItemKind::Mark => Self::Mark(item.into()),
-            _ => panic!("Type::from(ItemRef): not implemented"),
-        }
-    }
-}
-
-impl From<Type> for ItemRef {
-    fn from(t: Type) -> Self {
-        match t {
-            Type::List(n) => n.item_ref(),
-            Type::Map(n) => n.item_ref(),
-            Type::Text(n) => n.item_ref(),
-            Type::String(n) => n.item_ref(),
-            Type::Atom(n) => n.item_ref(),
-            Type::Move(n) => n.item_ref(),
-            Type::Mark(n) => n.item_ref(),
-            // Type::Doc(n) => n.root.item_ref(),
-            Type::Identity => panic!("Type::into(ItemRef): not implemented"),
-        }
     }
 }
 
