@@ -465,11 +465,11 @@ mod test {
         let s3: Type = doc.string("c").into();
         let s4: Type = doc.string("d").into();
 
-        s1.item_ref().borrow_mut().index = (FractionalIndex::default());
-        s2.item_ref().borrow_mut().index = (FractionalIndex::new_after(&s1.index()));
-        s3.item_ref().borrow_mut().index = FractionalIndex::new_after(&s2.index());
-        s4.item_ref().borrow_mut().index =
-            FractionalIndex::new_between(&s2.index(), &s3.index()).unwrap();
+        // s1.item_ref().borrow_mut().index = (FractionalIndex::default());
+        // s2.item_ref().borrow_mut().index = (FractionalIndex::new_after(&s1.index()));
+        // s3.item_ref().borrow_mut().index = FractionalIndex::new_after(&s2.index());
+        // s4.item_ref().borrow_mut().index =
+        //     FractionalIndex::new_between(&s2.index(), &s3.index()).unwrap();
 
         tree.insert(s1.clone());
         tree.insert(s2.clone());
@@ -508,13 +508,13 @@ mod test {
         let s4: Type = doc.string("d").into();
         let s5: Type = doc.string("e").into();
 
-        s1.item_ref().borrow_mut().index = (FractionalIndex::default());
-        s2.item_ref().borrow_mut().index = (FractionalIndex::new_after(&s1.index()));
-        s3.item_ref().borrow_mut().index = (FractionalIndex::new_after(&s2.index()));
-        s4.item_ref().borrow_mut().index =
-            FractionalIndex::new_between(&s2.index(), &s3.index()).unwrap();
-
-        s5.item_ref().borrow_mut().index = (FractionalIndex::new_after(&s3.index()));
+        // s1.item_ref().borrow_mut().index = (FractionalIndex::default());
+        // s2.item_ref().borrow_mut().index = (FractionalIndex::new_after(&s1.index()));
+        // s3.item_ref().borrow_mut().index = (FractionalIndex::new_after(&s2.index()));
+        // s4.item_ref().borrow_mut().index =
+        //     FractionalIndex::new_between(&s2.index(), &s3.index()).unwrap();
+        //
+        // s5.item_ref().borrow_mut().index = (FractionalIndex::new_after(&s3.index()));
 
         tree.insert(s1.clone());
         tree.insert(s2.clone());
@@ -552,11 +552,11 @@ mod test {
 
         for i in 0..10 {
             let s: Type = doc.string(i.to_string()).into();
-            if let Some(p) = prev {
-                s.item_ref().borrow_mut().index = (FractionalIndex::new_after(&p.index()));
-            } else {
-                s.item_ref().borrow_mut().index = (FractionalIndex::default());
-            }
+            // if let Some(p) = prev {
+            //     s.item_ref().borrow_mut().index = (FractionalIndex::new_after(&p.index()));
+            // } else {
+            //     s.item_ref().borrow_mut().index = (FractionalIndex::default());
+            // }
 
             nodes.push(s.clone());
 

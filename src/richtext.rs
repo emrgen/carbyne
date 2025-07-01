@@ -59,8 +59,6 @@ impl Serialize for RichText {
     {
         let text = self
             .text
-            .item_ref()
-            .borrow()
             .items()
             .iter()
             .map(|item| {

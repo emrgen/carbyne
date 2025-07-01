@@ -135,134 +135,134 @@ impl Doc {
             diff.adjust(&store_ref)
         };
 
-        {
-            let mut store = self.store.borrow_mut();
-            store.fields.extend(&diff.fields);
-            store.state.clients.extend(&diff.state.clients);
-
-            let (mut changes, mut movers) = diff.changes();
-            // println!("changes: {:?}", changes);
-            // println!("movers: {:?}", movers);
-
-            let mut change_ids = changes.keys().collect::<HashSet<_>>();
-
-            for (change, _) in &changes {
-                store.changes.insert(change.clone());
-            }
-
-            let clients = &store.state.clients.clone();
-            let mut parents = HashMap::new();
-
-            // find parents for each change
-            for (_, change) in &changes {
-                // println!("change_id: {:?}, deps: {:?}", change.id, change.deps);
-                let parent_change_ids: Vec<ChangeId> = change
-                    .deps
-                    .iter()
-                    .filter(|id| !change.id.contains(id)) // filter out the self dependency
-                    .map(|id| store.changes.get(id).cloned().unwrap()) // find the parent change IDs
-                    .collect::<HashSet<_>>()
-                    .into_iter()
-                    .collect::<Vec<_>>();
-
-                // println!("parents: {:?}", parent_change_ids);
-                let diff_parents = parent_change_ids
-                    .clone()
-                    .iter()
-                    .filter(|id| change_ids.contains(id))
-                    .cloned()
-                    .collect::<Vec<_>>();
-                parents.insert(change.id, diff_parents);
-                store.dag.insert(
-                    ChangeNode::new(change.id, parent_change_ids).with_mover(change.has_mover()),
-                    clients,
-                );
-            }
-
-            // remove the changes from the store to calculate the change ready order
-            change_ids.iter().for_each(|change_id| {
-                store.changes.remove(&change_id.id());
-            });
-
-            let mut redo = Vec::new();
-            let mut undo_movers = Vec::new();
-
-            if !movers.is_empty() {
-                println!("movers: {:?}", movers);
-                // undo the changes until we undo all diff movers
-                while !movers.is_empty() {
-                    if let Some((undo_change_id, flag)) = store.dag.undo(clients) {
-                        movers.remove(&undo_change_id);
-
-                        if change_ids.remove(&undo_change_id) {
-                            redo.push(undo_change_id);
-                        } else if flag & ChangeNodeFlags::MOVE.bits() != 0 {
-                            redo.push(undo_change_id);
-                            undo_movers.push(undo_change_id);
-                        }
-                    }
-                }
-                store.dag.done(clients);
-                //
-                // println!("undo: {:?}", undo_movers);
-                // println!("undo: {:?}", undo_movers);
-                // println!("redo: {:?}", redo);
-            }
-
-            let mut ready = sort_changes(parents);
-
-            println!("ready: {:?}", ready);
-            // println!("parents: {:?}", parents);
-
-            // undo the changes that were moved
-            for change_id in &ready {
-                // do integrate the items from new change
-                store.changes.insert(change_id.clone());
-            }
-
-            // undo-mover does not remove the movers from the document state, it just removes them from the movers stack top
-            undo_movers.reverse();
-            // just remove the movers from the document state
-            for mover_change in &undo_movers {
-                // find the movers
-                let movers = store.movers.get_by_range(*mover_change);
-                for mover in movers.into_iter().rev() {
-                    if let Some(target) = mover.item_ref().get_target() {
-                        store.remove_mover(target.id(), &mover);
-                    }
-                }
-            }
-
-            // NOTE: this section is active only when there was mover item in undo-changes and in current change
-            // do - redo the changes
-            // redo the changes that were undone
-            for change_id in &redo {
-                // if this change was undone, and it includes a mover, we need to re-apply the mover
-                // if applying the mover creates cycle, we need to skip it
-                if undo_movers.contains(change_id) {
-                    for mover in store.movers.get_by_range(*change_id) {
-                        match (mover.item_ref().get_target(), mover.parent()) {
-                            (Some(target), Some(parent)) => {
-                                if !creates_cycle(&parent, &target) {
-                                    store.add_mover(target.id(), mover);
-                                }
-                            }
-                            _ => todo!(),
-                        }
-                    }
-                } else {
-
-                    // do integrate the items from new change
-                    // println!("redo: {:?}", change_id);
-                }
-
-                store.changes.insert(change_id.clone());
-            }
-
-            change_ids.iter().for_each(|change_id| {
-                store.changes.insert(*change_id.clone());
-            })
-        }
+        // {
+        //     let mut store = self.store.borrow_mut();
+        //     store.fields.extend(&diff.fields);
+        //     store.state.clients.extend(&diff.state.clients);
+        //
+        //     let (mut changes, mut movers) = diff.changes();
+        //     // println!("changes: {:?}", changes);
+        //     // println!("movers: {:?}", movers);
+        //
+        //     let mut change_ids = changes.keys().collect::<HashSet<_>>();
+        //
+        //     for (change, _) in &changes {
+        //         store.changes.insert(change.clone());
+        //     }
+        //
+        //     let clients = &store.state.clients.clone();
+        //     let mut parents = HashMap::new();
+        //
+        //     // find parents for each change
+        //     for (_, change) in &changes {
+        //         // println!("change_id: {:?}, deps: {:?}", change.id, change.deps);
+        //         let parent_change_ids: Vec<ChangeId> = change
+        //             .deps
+        //             .iter()
+        //             .filter(|id| !change.id.contains(id)) // filter out the self dependency
+        //             .map(|id| store.changes.get(id).cloned().unwrap()) // find the parent change IDs
+        //             .collect::<HashSet<_>>()
+        //             .into_iter()
+        //             .collect::<Vec<_>>();
+        //
+        //         // println!("parents: {:?}", parent_change_ids);
+        //         let diff_parents = parent_change_ids
+        //             .clone()
+        //             .iter()
+        //             .filter(|id| change_ids.contains(id))
+        //             .cloned()
+        //             .collect::<Vec<_>>();
+        //         parents.insert(change.id, diff_parents);
+        //         store.dag.insert(
+        //             ChangeNode::new(change.id, parent_change_ids).with_mover(change.has_mover()),
+        //             clients,
+        //         );
+        //     }
+        //
+        //     // remove the changes from the store to calculate the change ready order
+        //     change_ids.iter().for_each(|change_id| {
+        //         store.changes.remove(&change_id.id());
+        //     });
+        //
+        //     let mut redo = Vec::new();
+        //     let mut undo_movers = Vec::new();
+        //
+        //     if !movers.is_empty() {
+        //         println!("movers: {:?}", movers);
+        //         // undo the changes until we undo all diff movers
+        //         while !movers.is_empty() {
+        //             if let Some((undo_change_id, flag)) = store.dag.undo(clients) {
+        //                 movers.remove(&undo_change_id);
+        //
+        //                 if change_ids.remove(&undo_change_id) {
+        //                     redo.push(undo_change_id);
+        //                 } else if flag & ChangeNodeFlags::MOVE.bits() != 0 {
+        //                     redo.push(undo_change_id);
+        //                     undo_movers.push(undo_change_id);
+        //                 }
+        //             }
+        //         }
+        //         store.dag.done(clients);
+        //         //
+        //         // println!("undo: {:?}", undo_movers);
+        //         // println!("undo: {:?}", undo_movers);
+        //         // println!("redo: {:?}", redo);
+        //     }
+        //
+        //     let mut ready = sort_changes(parents);
+        //
+        //     println!("ready: {:?}", ready);
+        //     // println!("parents: {:?}", parents);
+        //
+        //     // undo the changes that were moved
+        //     for change_id in &ready {
+        //         // do integrate the items from new change
+        //         store.changes.insert(change_id.clone());
+        //     }
+        //
+        //     // undo-mover does not remove the movers from the document state, it just removes them from the movers stack top
+        //     undo_movers.reverse();
+        //     // just remove the movers from the document state
+        //     for mover_change in &undo_movers {
+        //         // find the movers
+        //         let movers = store.movers.get_by_range(*mover_change);
+        //         for mover in movers.into_iter().rev() {
+        //             if let Some(target) = mover.item_ref().get_target() {
+        //                 store.remove_mover(target.id(), &mover);
+        //             }
+        //         }
+        //     }
+        //
+        //     // NOTE: this section is active only when there was mover item in undo-changes and in current change
+        //     // do - redo the changes
+        //     // redo the changes that were undone
+        //     for change_id in &redo {
+        //         // if this change was undone, and it includes a mover, we need to re-apply the mover
+        //         // if applying the mover creates cycle, we need to skip it
+        //         if undo_movers.contains(change_id) {
+        //             for mover in store.movers.get_by_range(*change_id) {
+        //                 match (mover.item_ref().get_target(), mover.parent()) {
+        //                     (Some(target), Some(parent)) => {
+        //                         if !creates_cycle(&parent, &target) {
+        //                             store.add_mover(target.id(), mover);
+        //                         }
+        //                     }
+        //                     _ => todo!(),
+        //                 }
+        //             }
+        //         } else {
+        //
+        //             // do integrate the items from new change
+        //             // println!("redo: {:?}", change_id);
+        //         }
+        //
+        //         store.changes.insert(change_id.clone());
+        //     }
+        //
+        //     change_ids.iter().for_each(|change_id| {
+        //         store.changes.insert(*change_id.clone());
+        //     })
+        // }
 
         {
             // TODO: for now we just apply the changes using a transaction, the changes are not used yet

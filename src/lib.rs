@@ -50,6 +50,7 @@ mod id_store;
 mod index;
 mod index_map;
 mod index_tree;
+mod inner_type;
 mod item;
 mod json;
 mod mark;

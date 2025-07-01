@@ -1,165 +1,203 @@
-use hashbrown::HashMap;
-use std::hash::{Hash, Hasher};
-use std::ops::Deref;
-
-use serde::ser::SerializeStruct;
-use serde::Serialize;
-
+use crate::bimapid::FieldId;
 use crate::id::{Id, IdRange, WithId, WithIdRange};
 use crate::item::{Content, ItemData, ItemIterator, ItemKey, ItemKind, ItemRef, Linked, StartEnd};
 use crate::mark::{Mark, MarkContent};
-use crate::nlist::NList;
+use crate::natom::AItem;
+use crate::nlist::{InnerList, ListContent, NList};
 use crate::nmark::NMark;
 use crate::store::WeakStoreRef;
 use crate::types::Type;
+use hashbrown::HashMap;
+use serde::ser::SerializeStruct;
+use serde::Serialize;
+use std::cell::RefCell;
+use std::hash::{Hash, Hasher};
+use std::ops::Deref;
+use std::rc::Rc;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default)]
+struct MapContent {
+    map: HashMap<FieldId, Vec<Type>>,
+}
+
+#[derive(Debug)]
+pub(crate) struct InnerMap {
+    pub(crate) store: WeakStoreRef,
+    pub(crate) flags: u8,
+    pub(crate) data: AItem,
+    pub(crate) parent: Option<Type>,
+    content: MapContent,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct NMap {
-    pub(crate) item: ItemRef,
+    inner: Rc<RefCell<InnerMap>>,
 }
 
 impl NMap {
     pub(crate) fn new(id: Id, store: WeakStoreRef) -> Self {
-        let data = ItemData {
-            kind: ItemKind::Map,
-            id,
-            ..ItemData::default()
-        };
-
-        let item_ref = ItemRef::new(data.into(), store);
-
-        Self { item: item_ref }
+        let data = AItem::new(id).with_kind(ItemKind::List);
+        Self {
+            inner: Rc::new(RefCell::new(InnerMap {
+                store,
+                flags: 0,
+                data,
+                parent: None,
+                content: MapContent::default(),
+            })),
+        }
     }
 
     /// size of the map
-    pub(crate) fn size(&self) -> u32 {
-        let item = self.borrow();
-        let map = item.as_map(&self.store);
-        map.len() as u32
-    }
-
-    /// item field value used in kv entry as key
-    fn field(&self) -> Option<String> {
-        self.borrow().field(&self.item_ref().store)
+    pub(crate) fn size(&self) -> usize {
+        self.children().len()
     }
 
     pub(crate) fn content(&self) -> Content {
-        let types = self.borrow().as_list();
+        let types = self
+            .borrow()
+            .content
+            .map
+            .iter()
+            .filter(|(_, t)| t.last().map_or(false, |t| t.is_visible()))
+            .map(|(f, t)| t.last().cloned().unwrap())
+            .collect();
+
         Content::Types(types)
     }
 
-    pub(crate) fn set_content(&self, content: impl Into<Content>) {
-        self.item_ref().set_content(content.into());
-    }
-
-    pub(crate) fn item_ref(&self) -> ItemRef {
-        self.item.clone()
-    }
-}
-
-impl Deref for NMap {
-    type Target = ItemRef;
-
-    fn deref(&self) -> &Self::Target {
-        &self.item
-    }
-}
-
-impl NMap {
     pub(crate) fn add_mark(&self, mark: impl Into<Mark>) {
-        let content = MarkContent::new(self.id().into(), mark.into());
-        let id = self
-            .store
-            .upgrade()
-            .unwrap()
-            .borrow_mut()
-            .next_id_range(1)
-            .id();
-
-        let mark = NMark::new(id, Content::Mark(content), self.store.clone());
+        // let content = MarkContent::new(self.id().into(), mark.into());
+        // let id = self
+        //     .store
+        //     .upgrade()
+        //     .unwrap()
+        //     .borrow_mut()
+        //     .next_id_range(1)
+        //     .id();
+        //
+        // let mark = NMark::new(id, Content::Mark(content), self.store.clone());
 
         // self.item_ref().add_mark(mark);
     }
 
     pub(crate) fn get(&self, key: impl Into<ItemKey>) -> Option<Type> {
-        let item = self.borrow();
         let key = key.into().as_string();
-        let map = self.visible_children();
-        let item = map.get(&key);
+        if let Some(field_id) = self.map_field_id(&key) {
+            return self
+                .borrow()
+                .content
+                .map
+                .get(&field_id)
+                .map(|v| v.last().cloned())
+                .flatten();
+        }
 
-        item.cloned()
+        None
+    }
+
+    fn map_field_id(&self, key: &String) -> Option<FieldId> {
+        self.borrow()
+            .store
+            .upgrade()
+            .map(|store| store.borrow().fields.get_field_id(key).cloned())
+            .flatten()
     }
 
     pub(crate) fn set(&self, field: impl Into<String>, item: impl Into<Type>) {
         let item = item.into();
-        let item_ref = item.item_ref();
-        let store = item_ref.store.upgrade().unwrap();
-        let field_id = store.borrow_mut().get_field_id(&field.into());
-        item.set_parent(Some(self.into()));
-        item_ref.borrow_mut().data.field = Some(field_id);
-        self.item_ref().append(item);
+        if let Some(field_id) = self.map_field_id(&field.into()) {
+            let inner = self.borrow_mut();
+            // insert into inner content by field id
+        }
     }
 
     pub(crate) fn remove(&self, key: ItemKey) {
-        let map = self.visible_children();
-        let value = map.get(&key.as_string());
-        if let Some(value) = value {
-            value.delete();
+        let field = key.as_string();
+        if let Some(field_id) = self.map_field_id(&field) {
+            self.borrow_mut()
+                .content
+                .map
+                .get(&field_id)
+                .map(|v| v.last().map(|t| t.delete()));
         }
     }
 
     pub(crate) fn remove_child(&self, child: &Type) {
-        child.item_ref().disconnect();
+        // self.borrow_mut().content.remove_item(child);
+        child.disconnect();
     }
 
     //
     pub(crate) fn keys(&self) -> Vec<String> {
-        self.visible_children().keys().cloned().collect()
+        let items: Vec<_> = self.children();
+        let store = self.borrow();
+        let mut keys = Vec::new();
+        for t in items {
+            if let Some(field) = t.field() {
+                keys.push(field.clone())
+            }
+        }
+
+        keys
     }
 
     pub(crate) fn values(&self) -> Vec<Type> {
-        self.visible_children().values().cloned().collect()
+        self.children()
     }
 
+    // delete all visible last items for each key
     pub(crate) fn clear(&self) {
-        let item = self.borrow();
-        let map = item.as_map(&self.store);
-        for item in map.values() {
-            item.delete();
-        }
-    }
-
-    fn visible_children(&self) -> HashMap<String, Type> {
-        let mut curr = self.start();
-        let mut map = HashMap::new();
-        while let Some(item) = curr {
-            if item.is_visible() {
-                if let Some(field) = item.field() {
-                    map.insert(field, Type::from(item.clone()));
+        self.borrow()
+            .content
+            .map
+            .iter()
+            .filter(|(_, t)| t.last().map_or(false, |t| t.is_visible()))
+            .for_each(|(_, t)| {
+                if let Some(last) = t.last() {
+                    last.delete();
                 }
-            }
-
-            curr = item.right();
-        }
-
-        map
+            });
     }
 
-    #[inline]
-    pub(crate) fn delete(&self) {
-        self.item.delete(1);
+    fn children(&self) -> Vec<Type> {
+        let mut list = Vec::new();
+        self.borrow()
+            .content
+            .map
+            .iter()
+            .filter(|(_, t)| t.last().map_or(false, |t| t.is_visible()))
+            .for_each(|(_, t)| {
+                if let Some(last) = t.last() {
+                    list.push(last.clone());
+                }
+            });
+
+        list
     }
 
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        let mut json = self.borrow().to_json();
-
-        let map = self.visible_children();
+        let map = self.children();
         let mut content = serde_json::Map::new();
-        for (key, value) in map.iter() {
-            content.insert(key.clone(), value.to_json());
+        for t in self.children().iter() {
+            content.insert(t.field().unwrap(), t.to_json());
         }
 
         serde_json::Value::Object(content)
+    }
+}
+
+impl Deref for NMap {
+    type Target = Rc<RefCell<InnerMap>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl WithIdRange for NMap {
+    fn range(&self) -> IdRange {
+        self.borrow().id().range(1)
     }
 }
 
@@ -168,14 +206,14 @@ impl Serialize for NMap {
     where
         S: serde::ser::Serializer,
     {
-        let mut s = serializer.serialize_struct("Doc", self.borrow().serialize_size() + 1)?;
-        self.serialize_with(&mut s)?;
+        let mut s = serializer.serialize_struct("Map", 1)?;
+        // self.serialize_with(&mut s)?;
 
         // let map = self.borrow().as_map(self.store.clone());
         // let content = serde_json::to_value(map).unwrap_or_default();
 
         let mut map = HashMap::new();
-        self.item_iter().for_each(|item| {
+        self.children().iter().for_each(|item| {
             let field = item.field().unwrap_or_default();
             if (item.is_visible()) {
                 let value = serde_json::to_value(item).unwrap_or_default();
@@ -189,31 +227,6 @@ impl Serialize for NMap {
         s.serialize_field("content", &content)?;
 
         s.end()
-    }
-}
-
-impl Hash for NMap {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id().hash(state);
-    }
-}
-
-impl WithId for NMap {
-    #[inline]
-    fn id(&self) -> Id {
-        self.item.borrow().id()
-    }
-}
-
-impl WithIdRange for NMap {
-    fn range(&self) -> IdRange {
-        self.item.borrow().id().range(1)
-    }
-}
-
-impl From<ItemRef> for NMap {
-    fn from(item: ItemRef) -> Self {
-        Self { item }
     }
 }
 
@@ -299,8 +312,8 @@ mod tests {
         t2.insert(0, doc.string("Goodbye, world!"));
         p2.set("children", t2.clone());
 
-        list.append(p1.clone());
-        list.append(p2.clone());
+        // list.append(p1.clone());
+        // list.append(p2.clone());
         // let yaml = serde_json::to_string(&doc).unwrap();
         // println!("---\n{}", yaml);
 

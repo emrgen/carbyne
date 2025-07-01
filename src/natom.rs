@@ -1,5 +1,7 @@
 use crate::bimapid::FieldId;
+use crate::delete::DeleteItem;
 use crate::id::{Id, IdRange, WithId, WithIdRange};
+use crate::inner_type::InnerType;
 use crate::item::{Content, ItemData, ItemKind, ItemKindFlags, ItemRef};
 use crate::store::WeakStoreRef;
 use crate::Type;
@@ -38,22 +40,44 @@ impl AItem {
         self
     }
 
+    pub(crate) fn with_field(mut self, field: FieldId) -> AItem {
+        self.set_field(field);
+        self
+    }
+
     pub(crate) fn with_left(mut self, id: Id) -> AItem {
-        self.0 |= ((((id.client & U20) << 20) | (id.clock & U20)) as u128) << 48;
-        self.0 |= (1 << 5);
+        self.set_left(id);
+        self
+    }
+
+    pub(crate) fn with_parent(mut self, id: Id) -> AItem {
+        self.set_parent(id);
         self
     }
 
     pub(crate) fn with_right(mut self, id: Id) -> AItem {
-        self.0 |= ((((id.client & U20) << 20) | (id.clock & U20)) as u128) << 88;
-        self.0 |= (1 << 6);
+        self.set_right(id);
         self
     }
 
-    pub(crate) fn with_field(mut self, field: FieldId) -> AItem {
+    pub(crate) fn set_field(&mut self, field: FieldId) {
         self.0 |= ((field & U20) as u128) << 88;
         self.0 |= (1 << 4);
-        self
+    }
+
+    pub(crate) fn set_left(&mut self, id: Id) {
+        self.0 |= ((((id.client & U20) << 20) | (id.clock & U20)) as u128) << 48;
+        self.0 |= (1 << 5);
+    }
+
+    pub(crate) fn set_parent(&mut self, id: Id) {
+        self.0 |= ((((id.client & U20) << 20) | (id.clock & U20)) as u128) << 48;
+        self.0 &= !(1 << 5);
+    }
+
+    pub(crate) fn set_right(&mut self, id: Id) {
+        self.0 |= ((((id.client & U20) << 20) | (id.clock & U20)) as u128) << 88;
+        self.0 |= (1 << 6);
     }
 
     #[inline]
@@ -71,6 +95,15 @@ impl AItem {
     #[inline]
     pub(crate) fn id(&self) -> Id {
         AItem::decode_id(self.0 >> 8)
+    }
+
+    #[inline]
+    pub(crate) fn parent_id(&self) -> Option<Id> {
+        if self.has_parent() {
+            return Some(Self::decode_id(self.0 >> 48));
+        }
+
+        None
     }
 
     #[inline]
@@ -100,27 +133,14 @@ impl AItem {
         None
     }
 
-    pub(crate) fn field(&self, store: &WeakStoreRef) -> Option<String> {
-        if let Some(field) = self.field_id() {
-            return store
-                .upgrade()
-                .map(|store| {
-                    store
-                        .borrow()
-                        .fields
-                        .get_field(&field)
-                        .cloned()
-                        .map(|id| id.to_string())
-                })
-                .flatten();
-        }
-
-        None
-    }
-
     #[inline]
     pub(crate) fn has_field(&self) -> bool {
         self.flag() & (1 << 4) != 0
+    }
+
+    #[inline]
+    pub(crate) fn has_parent(&self) -> bool {
+        !self.has_left()
     }
 
     #[inline]
@@ -153,26 +173,17 @@ pub struct AItemData {
 
 // Atom is a holds a fixed Content
 #[derive(Debug)]
-pub struct InnerAtom {
+pub(crate) struct InnerAtom {
     pub(crate) store: WeakStoreRef,
+    pub(crate) flags: u8,
     pub(crate) data: AItem,
     pub(crate) parent: Option<Type>,
     pub(crate) content: Content,
 }
 
-impl InnerAtom {}
-
-impl Deref for InnerAtom {
-    type Target = AItem;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct NAtom {
-    inner: Rc<RefCell<InnerAtom>>,
+    pub(crate) inner: Rc<RefCell<InnerAtom>>,
 }
 
 impl NAtom {
@@ -181,16 +192,12 @@ impl NAtom {
         Self {
             inner: Rc::new(RefCell::new(InnerAtom {
                 store,
+                flags: 0,
                 data,
                 parent: None,
                 content,
             })),
         }
-    }
-
-    #[inline]
-    pub(crate) fn depth(&self) -> u32 {
-        unimplemented!()
     }
 
     #[inline]
@@ -204,23 +211,23 @@ impl NAtom {
     }
 
     #[inline]
-    pub(crate) fn delete(&self) {
-        //self.item.delete(1);
-    }
-
-    pub(crate) fn set_parent(&self, parent: Option<Type>) {
-        self.inner.borrow_mut().parent = parent;
-    }
-
-    #[inline]
-    pub(crate) fn item_ref(&self) -> ItemRef {
-        // self.item.clone()
-        unimplemented!()
-    }
-
-    #[inline]
     pub(crate) fn to_json(&self) -> serde_json::Value {
         self.borrow().content.to_json()
+    }
+}
+
+impl Deref for NAtom {
+    type Target = Rc<RefCell<InnerAtom>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl WithIdRange for NAtom {
+    #[inline]
+    fn range(&self) -> IdRange {
+        self.borrow().id().range(1)
     }
 }
 
@@ -236,41 +243,6 @@ impl Serialize for NAtom {
         atom.serialize_field("content", &self.borrow().content)?;
 
         atom.end()
-    }
-}
-
-impl Hash for NAtom {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id().hash(state);
-    }
-}
-
-impl WithId for NAtom {
-    #[inline]
-    fn id(&self) -> Id {
-        self.borrow().id()
-    }
-}
-
-impl WithIdRange for NAtom {
-    #[inline]
-    fn range(&self) -> IdRange {
-        self.borrow().id().range(1)
-    }
-}
-
-impl Deref for NAtom {
-    type Target = Rc<RefCell<InnerAtom>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl From<ItemRef> for NAtom {
-    fn from(item: ItemRef) -> Self {
-        // Self { item }
-        unimplemented!()
     }
 }
 

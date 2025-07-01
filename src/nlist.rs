@@ -1,3 +1,4 @@
+use crate::bimapid::FieldId;
 use crate::cycle::creates_cycle;
 use crate::delete::DeleteItem;
 use crate::encoder::{Encode, EncodeContext, Encoder};
@@ -5,6 +6,7 @@ use crate::id::{Id, IdRange, WithId, WithIdRange, WithTarget};
 use crate::index::{BTreeIndex, IBTree, ItemIndexMap};
 use crate::index_tree;
 use crate::index_tree::{IndexTree, ValueIter};
+use crate::inner_type::InnerType;
 use crate::item::{
     ContainerKind, Content, ItemData, ItemIterator, ItemKey, ItemKind, ItemRef, Linked, StartEnd,
     WithIndex,
@@ -75,11 +77,11 @@ impl ListContent {
     }
 
     // auto downgrade to vec when item count reach below a threshold
-    fn remove(&self, index: usize) -> Option<&Type> {
+    pub(crate) fn remove(&self, index: usize) -> Option<&Type> {
         None
     }
 
-    fn remove_item(&mut self, item: &Type) {
+    pub(crate) fn remove_item(&mut self, item: &Type) {
         if let Some(index) = self.index_of(item) {
             self.remove(index);
         }
@@ -107,7 +109,7 @@ impl ListContent {
     }
 
     // iterate over all list items
-    fn iter(&self) -> ListContentIter<'_, Type> {
+    pub(crate) fn iter(&self) -> ListContentIter<'_, Type> {
         match self {
             ListContent::Small(v) => ListContentIter::Small(v.iter()),
             ListContent::Large(v) => ListContentIter::Large(v.iter_from(0).unwrap()),
@@ -133,42 +135,11 @@ impl<'a, V: Debug> Iterator for ListContentIter<'a, V> {
 
 #[derive(Debug)]
 pub(crate) struct InnerList {
-    store: WeakStoreRef,
-    flags: u8,
-    data: AItem,
-    parent: Option<Type>,
+    pub(crate) store: WeakStoreRef,
+    pub(crate) flags: u8,
+    pub(crate) data: AItem,
+    pub(crate) parent: Option<Type>,
     content: ListContent,
-}
-
-impl InnerList {
-    fn field(&self) -> Option<String> {
-        self.data.field(&self.store)
-    }
-
-    fn delete(&mut self) {
-        let store = self.store.upgrade().unwrap();
-        let id = store.borrow_mut().next_id();
-        let item = DeleteItem::new(id, self.id().range(1));
-        store.borrow_mut().insert_delete(item);
-        self.make_deleted();
-    }
-
-    #[inline]
-    pub(crate) fn make_deleted(&mut self) {
-        self.flags |= 0x01;
-    }
-
-    pub(crate) fn unmark_deleted(&mut self) {
-        self.flags &= !0x01;
-    }
-}
-
-impl Deref for InnerList {
-    type Target = AItem;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -190,21 +161,9 @@ impl NList {
         }
     }
 
-    pub(crate) fn depth(&self) -> u32 {
-        self.inner
-            .borrow()
-            .parent
-            .as_ref()
-            .map_or(0, |t| t.depth() + 1)
-    }
-
     #[inline]
     pub fn size(&self) -> usize {
         self.inner.borrow().content.size()
-    }
-
-    pub(crate) fn set_parent(&self, parent: Option<Type>) {
-        self.inner.borrow_mut().parent = parent;
     }
 
     #[inline]
@@ -213,11 +172,6 @@ impl NList {
             return self.inner.borrow().content.get(offset).map(|v| v.clone());
         }
         None
-    }
-
-    #[inline]
-    pub(crate) fn field(&self) -> Option<String> {
-        self.borrow().field()
     }
 
     #[inline]
@@ -235,7 +189,7 @@ impl NList {
     fn prepend(&self, item: impl Into<Type>) {
         let item = item.into();
         item.set_parent(Some(self.into()));
-        self.borrow_mut().content.insert(0, item.clone());
+        self.inner.borrow_mut().content.insert(0, item.clone());
     }
 
     #[inline]
@@ -243,7 +197,10 @@ impl NList {
     pub fn append(&self, item: impl Into<Type>) {
         let item = item.into();
         item.set_parent(Some(self.into()));
-        self.borrow_mut().content.insert(self.size(), item.clone());
+        self.inner
+            .borrow_mut()
+            .content
+            .insert(self.size(), item.clone());
     }
 
     pub fn insert(&self, offset: usize, item: impl Into<Type>) {
@@ -272,7 +229,7 @@ impl NList {
     #[inline]
     pub(crate) fn remove_child(&self, child: &Type) {
         self.inner.borrow_mut().content.remove_item(child);
-        child.item_ref().disconnect();
+        // child.disconnect();
     }
 
     // move the item after the target item
@@ -301,7 +258,7 @@ impl NList {
         let mover: Type = NMove::new(id, target.clone(), store.clone()).into();
 
         // FIXME: use target.mark_moved
-        target.item_ref().mark_moved();
+        // target.item_ref().mark_moved();
 
         store
             .upgrade()
@@ -310,11 +267,6 @@ impl NList {
             .add_mover(target.id(), mover.clone());
 
         self.insert(offset, mover);
-    }
-
-    #[inline]
-    pub(crate) fn delete(&self) {
-        self.inner.borrow_mut().delete();
     }
 
     // remove all children,
@@ -337,24 +289,24 @@ impl NList {
     }
 }
 
-impl Encode for NList {
-    fn encode<T: Encoder>(&self, e: &mut T, ctx: &mut EncodeContext) {
-        self.inner.borrow().data.encode(e, ctx);
-    }
-}
-
-impl Hash for NList {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id().hash(state);
-    }
-}
-
 impl Deref for NList {
     type Target = Rc<RefCell<InnerList>>;
 
-    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+impl WithIdRange for NList {
+    #[inline]
+    fn range(&self) -> IdRange {
+        self.borrow().id().range(1)
+    }
+}
+
+impl Encode for NList {
+    fn encode<T: Encoder>(&self, e: &mut T, ctx: &mut EncodeContext) {
+        // self.inner.borrow().data.encode(e, ctx);
     }
 }
 
@@ -374,20 +326,6 @@ impl Serialize for NList {
         // s.serialize_field("content", &serde_json::Value::Array(content))?;
 
         s.end()
-    }
-}
-
-impl WithId for NList {
-    #[inline]
-    fn id(&self) -> Id {
-        self.borrow().id()
-    }
-}
-
-impl WithIdRange for NList {
-    #[inline]
-    fn range(&self) -> IdRange {
-        self.borrow().id().range(1)
     }
 }
 
