@@ -1,13 +1,18 @@
-use std::ops::Deref;
-
 use crate::bimapid::FieldId;
 use crate::id::{Id, IdRange, WithId, WithIdRange};
 use crate::item::{Content, ItemData, ItemKind, ItemKindFlags, ItemRef};
 use crate::store::WeakStoreRef;
+use crate::Type;
 use serde::ser::SerializeStruct;
 use serde::Serialize;
+use std::cell::RefCell;
+use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
+use std::ops::Deref;
+use std::rc::Rc;
 
-struct AItemData(u128);
+#[derive(Clone)]
+pub struct AItemData(u128);
 
 const M4: u128 = (1 << 4) - 1;
 const M8: u128 = (1 << 8) - 1;
@@ -21,6 +26,11 @@ impl AItemData {
     fn new(id: Id) -> AItemData {
         let mut data = AItemData(0);
         data.with_id(id)
+    }
+
+    fn with_kind(mut self, kind: ItemKind) -> AItemData {
+        self.0 |= ItemKindFlags::from(kind).bits() as u128;
+        self
     }
 
     fn with_id(mut self, id: Id) -> AItemData {
@@ -111,34 +121,48 @@ impl AItemData {
     }
 }
 
+impl Debug for AItemData {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
+
 // Atom is a holds a fixed Content
+#[derive(Debug)]
+pub struct InnerAtom {
+    pub(crate) store: WeakStoreRef,
+    pub(crate) data: AItemData,
+    pub(crate) content: Content,
+}
+
+impl Deref for InnerAtom {
+    type Target = AItemData;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct NAtom {
-    pub(crate) store: WeakStoreRef,
-    pub(crate) id: Id,
-    pub(crate) left_id: Option<Id>,
-    pub(crate) right_id: Option<Id>,
-    pub(crate) field: Option<FieldId>,
-    pub(crate) content: Content,
+    inner: Rc<RefCell<InnerAtom>>,
 }
 
 impl NAtom {
     pub(crate) fn new(id: Id, content: Content, store: WeakStoreRef) -> Self {
+        let data = AItemData::new(id).with_kind(ItemKind::Atom);
         Self {
-            store,
-            // data
-            id,
-            left_id: None,
-            right_id: None,
-            field: None,
-            content,
+            inner: Rc::new(RefCell::new(InnerAtom {
+                store,
+                data,
+                content,
+            })),
         }
     }
 
     #[inline]
     pub(crate) fn depth(&self) -> u32 {
-        0
-        //self.item.depth()
+        unimplemented!()
     }
 
     #[inline]
@@ -148,7 +172,7 @@ impl NAtom {
 
     #[inline]
     pub(crate) fn content(&self) -> Content {
-        self.borrow().content()
+        self.borrow().content.clone()
     }
 
     #[inline]
@@ -164,7 +188,7 @@ impl NAtom {
 
     #[inline]
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        self.content().to_json()
+        self.borrow().content.to_json()
     }
 }
 
@@ -173,20 +197,26 @@ impl Serialize for NAtom {
     where
         S: serde::ser::Serializer,
     {
-        let mut atom = serializer.serialize_struct("Atom", self.borrow().serialize_size() + 1)?;
+        let mut atom = serializer.serialize_struct("Atom", 1)?;
 
-        self.serialize_with(&mut atom)?;
+        // self.serialize_with(&mut atom)?;
 
-        atom.serialize_field("content", &self.content())?;
+        atom.serialize_field("content", &self.borrow().content)?;
 
         atom.end()
+    }
+}
+
+impl Hash for NAtom {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
     }
 }
 
 impl WithId for NAtom {
     #[inline]
     fn id(&self) -> Id {
-        self.item.borrow().id()
+        self.borrow().id()
     }
 }
 
@@ -198,11 +228,10 @@ impl WithIdRange for NAtom {
 }
 
 impl Deref for NAtom {
-    type Target = ItemRef;
+    type Target = Rc<RefCell<InnerAtom>>;
 
     fn deref(&self) -> &Self::Target {
-        // &self.item
-        unimplemented!()
+        &self.inner
     }
 }
 
@@ -215,14 +244,20 @@ impl From<ItemRef> for NAtom {
 
 #[cfg(test)]
 mod tests {
-    use crate::natom::AItemData;
-    use crate::Id;
+    use super::*;
 
     #[test]
     fn test_create_a_item_data() {
         let data = AItemData::new(Id::new(1, 1))
+            .with_kind(ItemKind::Atom)
             .with_left(Id::new(2, 2))
             .with_right(Id::new(3, 3));
+
+        println!("size: {}", size_of::<WeakStoreRef>());
+        println!("size: {}", size_of::<InnerAtom>());
+        println!("size: {}", size_of::<AItemData>());
+        println!("size: {}", size_of::<Content>());
+        assert_eq!(data.kind(), ItemKind::Atom);
         assert_eq!(data.id(), Id::new(1, 1));
         assert_eq!(data.left_id(), Some(Id::new(2, 2)));
         assert_eq!(data.right_id(), Some(Id::new(3, 3)));

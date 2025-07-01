@@ -1,12 +1,14 @@
 use crate::id::{Id, IdRange, WithId, WithIdRange, WithTarget};
 use crate::item::{Content, ItemData, ItemIterator, ItemKey, ItemKind, ItemRef};
 use crate::nlist::NList;
+use crate::nmark::NMark;
 use crate::store::WeakStoreRef;
 use crate::Type;
 use fake::Opt;
 use serde::ser::SerializeStruct;
 use serde::Serialize;
 use serde_json::Value;
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 /// NMove represents a move operation in the document.
@@ -127,6 +129,12 @@ impl Serialize for NMove {
         S: serde::ser::Serializer,
     {
         self.get_target().serialize(serializer).into()
+    }
+}
+
+impl Hash for NMove {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
     }
 }
 

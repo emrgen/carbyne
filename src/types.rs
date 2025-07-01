@@ -22,7 +22,7 @@ use crate::store::{StoreRef, WeakStoreRef};
 use crate::{print_yaml, Client};
 
 /// Type is a wrapper around the different item types in the store.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Hash)]
 pub enum Type {
     List(NList),     // container
     Map(NMap),       // container
@@ -66,7 +66,7 @@ impl Type {
 impl Type {
     pub(crate) fn slice(&self, start: u32, end: u32) -> Vec<Type> {
         match self {
-            Type::Text(n) => n.slice(start, end),
+            // Type::Text(n) => n.slice(start, end),
             _ => panic!("slice: not implemented"),
         }
     }
@@ -545,7 +545,7 @@ impl Type {
     pub(crate) fn text_content(&self) -> String {
         match self {
             Type::Text(n) => n.text_content(),
-            Type::Atom(n) => n.text_content(),
+            // Type::Atom(n) => n.text_content(),
             _ => {
                 panic!("text_content: not implemented for {:?}", self.kind())
             }

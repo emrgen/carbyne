@@ -1,4 +1,5 @@
 use hashbrown::HashMap;
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 use serde::ser::SerializeStruct;
@@ -7,6 +8,7 @@ use serde::Serialize;
 use crate::id::{Id, IdRange, WithId, WithIdRange};
 use crate::item::{Content, ItemData, ItemIterator, ItemKey, ItemKind, ItemRef, Linked, StartEnd};
 use crate::mark::{Mark, MarkContent};
+use crate::nlist::NList;
 use crate::nmark::NMark;
 use crate::store::WeakStoreRef;
 use crate::types::Type;
@@ -187,6 +189,12 @@ impl Serialize for NMap {
         s.serialize_field("content", &content)?;
 
         s.end()
+    }
+}
+
+impl Hash for NMap {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
     }
 }
 

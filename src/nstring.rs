@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 use serde::ser::SerializeStruct;
@@ -8,6 +9,7 @@ use crate::id::{ClockTick, Id, IdRange, Split, WithId, WithIdRange};
 use crate::item::{Content, ItemData, ItemKind, ItemRef};
 use crate::mark::{Mark, MarkContent};
 use crate::nmark::NMark;
+use crate::nmove::NMove;
 use crate::store::WeakStoreRef;
 use crate::types::Type;
 
@@ -148,6 +150,12 @@ impl Serialize for NString {
         s.serialize_field("content", &content)?;
 
         s.end()
+    }
+}
+
+impl Hash for NString {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
     }
 }
 

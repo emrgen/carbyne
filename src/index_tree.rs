@@ -13,7 +13,8 @@ use std::mem;
 // ChangeTree is a BTree like append-only structure
 // It has a simplified vector like API for efficient insertion by index.
 // Support index look up and iter api
-struct ChangeTree<V: Clone + Hash + Eq + Debug> {
+#[derive(Debug)]
+pub(crate) struct IndexTree<V: Clone + Hash + Eq + Debug> {
     root: Node<V>,
     order: usize,
     dirty: HashSet<V>,
@@ -21,13 +22,13 @@ struct ChangeTree<V: Clone + Hash + Eq + Debug> {
     mapper: IndexMapper,
 }
 
-impl<V: Clone + Hash + Eq + Debug> ChangeTree<V> {
+impl<V: Clone + Hash + Eq + Debug> IndexTree<V> {
     pub(crate) fn new() -> Self {
         Self::with_order(10)
     }
 
-    fn with_order(k: usize) -> Self {
-        ChangeTree {
+    pub(crate) fn with_order(k: usize) -> Self {
+        IndexTree {
             root: Node::leaf(k),
             order: k,
             dirty: Default::default(),
@@ -37,7 +38,7 @@ impl<V: Clone + Hash + Eq + Debug> ChangeTree<V> {
     }
 
     // compress the index mappers
-    fn compress(&mut self) {
+    pub(crate) fn compress(&mut self) {
         for id in &self.dirty {
             // update the index_ref with current index
             if let Some(idx_ref) = self.refs.get_mut(&id) {
@@ -100,19 +101,20 @@ impl<V: Clone + Hash + Eq + Debug> ChangeTree<V> {
         self.root.size()
     }
 
+    pub(crate) fn iter_from(&self, index: usize) -> Option<ValueIter<V>> {
+        let mut internals = Vec::new();
+        self.root.iter_from(index, internals)
+    }
+
     pub(crate) fn print(&self) {
         let mut tree = TreeBuilder::new(format!("BTree: {:?}", self.size()));
         self.root.print(&mut tree);
         print_tree(&tree.build()).unwrap();
     }
-
-    fn iter_from(&self, index: usize) -> Option<ValueIter<V>> {
-        let mut internals = Vec::new();
-        self.root.iter_from(index, internals)
-    }
 }
 
-enum Node<V> {
+#[derive(Debug)]
+enum Node<V: Debug> {
     Branch(Branch<V>),
     Leaf(Leaf<V>),
 }
@@ -186,7 +188,8 @@ impl<V: std::fmt::Debug> Node<V> {
     }
 }
 
-struct Branch<V> {
+#[derive(Debug)]
+struct Branch<V: Debug> {
     children: Vec<Node<V>>,
     counts: Vec<usize>,
 }
@@ -333,6 +336,7 @@ impl<V: Debug> Branch<V> {
     }
 }
 
+#[derive(Debug)]
 struct Leaf<V> {
     values: Vec<V>,
 }
@@ -447,7 +451,7 @@ mod tests {
 
     #[test]
     fn test_change_tree_prepend() {
-        let mut tree = ChangeTree::new();
+        let mut tree = IndexTree::new();
         tree.insert(0, 0);
         tree.insert(0, 1);
         tree.insert(0, 2);
@@ -462,7 +466,7 @@ mod tests {
 
     #[test]
     fn test_change_tree_append() {
-        let mut tree = ChangeTree::new();
+        let mut tree = IndexTree::new();
         tree.insert(0, 0);
         tree.insert(1, 1);
         tree.insert(2, 2);
@@ -477,7 +481,7 @@ mod tests {
 
     #[test]
     fn test_change_tree_insert_random() {
-        let mut tree = ChangeTree::new();
+        let mut tree = IndexTree::new();
         for k in 0..5 {
             tree.insert(k, k);
         }
@@ -500,7 +504,7 @@ mod tests {
     #[test]
     fn test_change_tree_insert_random1() {
         for order in 2..5 {
-            let mut tree = ChangeTree::with_order(order);
+            let mut tree = IndexTree::with_order(order);
             for k in 0..5 {
                 tree.insert(k, k);
             }
@@ -523,7 +527,7 @@ mod tests {
 
     #[test]
     fn test_change_tree_insert_random2() {
-        let mut tree = ChangeTree::with_order(6);
+        let mut tree = IndexTree::with_order(6);
         for k in 0..50 {
             tree.insert(k, k);
         }

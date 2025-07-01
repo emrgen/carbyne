@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 use serde::Serialize;
@@ -5,6 +6,7 @@ use serde_json::Value;
 
 use crate::id::{Id, IdRange, Split, WithId, WithIdRange};
 use crate::item::{Content, ItemData, ItemKind, ItemRef};
+use crate::nmap::NMap;
 use crate::store::WeakStoreRef;
 use crate::types::Type;
 
@@ -86,6 +88,12 @@ impl Deref for NMark {
 
     fn deref(&self) -> &Self::Target {
         &self.item
+    }
+}
+
+impl Hash for NMark {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
     }
 }
 

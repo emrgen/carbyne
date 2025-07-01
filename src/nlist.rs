@@ -1,10 +1,12 @@
 use crate::cycle::creates_cycle;
 use crate::id::{Id, IdRange, WithId, WithIdRange, WithTarget};
 use crate::index::{BTreeIndex, IBTree, ItemIndexMap};
+use crate::index_tree::IndexTree;
 use crate::item::{
     ContainerKind, Content, ItemData, ItemIterator, ItemKey, ItemKind, ItemRef, Linked, StartEnd,
     WithIndex,
 };
+use crate::natom::{AItemData, InnerAtom, NAtom};
 use crate::nmove::NMove;
 use crate::store::WeakStoreRef;
 use crate::types::Type;
@@ -12,8 +14,97 @@ use log::warn;
 use serde::ser::{Serialize, SerializeStruct};
 use std::cell::RefCell;
 use std::fmt::Debug;
-use std::ops::Deref;
+use std::hash::{Hash, Hasher};
+use std::ops::{Deref, Index};
 use std::rc::Rc;
+
+// expose a vec like api for get, insert, remove, index_of
+#[derive(Debug)]
+pub(crate) enum ListContent {
+    Small(Vec<Type>),
+    Large(IndexTree<Type>),
+}
+
+impl ListContent {
+    fn get(&self, index: usize) -> Option<&Type> {
+        match self {
+            ListContent::Small(v) => v.get(index),
+            ListContent::Large(v) => v.at_index(index),
+        }
+    }
+
+    fn is_small(&self) -> bool {
+        match self {
+            ListContent::Small(_) => true,
+            ListContent::Large(_) => false,
+        }
+    }
+
+    // auto upgrade to index tree when item count reach above a threshold
+    fn insert(&mut self, index: usize, item: Type) {
+        if self.is_small() && self.size() == 10 {
+            let mut tree = IndexTree::new();
+            match self {
+                ListContent::Small(v) => v.drain(0..).enumerate().for_each(|(i, t)| {
+                    tree.insert(i, t);
+                }),
+                _ => {}
+            };
+
+            *self = ListContent::Large(tree)
+        }
+
+        match self {
+            ListContent::Small(v) => {
+                v.insert(index, item);
+            }
+            ListContent::Large(v) => {
+                v.insert(index, item);
+            }
+        }
+    }
+
+    // auto downgrade to vec when item count reach below a threshold
+    fn remove(&self, index: usize) -> Option<&Type> {
+        None
+    }
+
+    fn index_of(&self, item: &Type) -> Option<usize> {
+        match self {
+            ListContent::Small(v) => v.iter().position(|r| r == item),
+            ListContent::Large(v) => v.index_of(item),
+        }
+    }
+
+    fn size(&self) -> usize {
+        match self {
+            ListContent::Small(v) => v.len(),
+            ListContent::Large(v) => v.size(),
+        }
+    }
+
+    fn contains(&self, item: &Type) -> bool {
+        match self {
+            ListContent::Small(v) => v.iter().position(|r| r == item).map_or(false, |v| true),
+            ListContent::Large(v) => v.contains(item),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct InnerList {
+    pub(crate) store: WeakStoreRef,
+    pub(crate) data: AItemData,
+    pub(crate) content: ListContent,
+}
+
+impl Deref for InnerList {
+    type Target = AItemData;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct NList {
@@ -118,6 +209,12 @@ impl NList {
     #[inline]
     pub(crate) fn index_of(&self, target: &Type) -> i32 {
         self.list.borrow().index_of(target)
+    }
+}
+
+impl Hash for NList {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
     }
 }
 

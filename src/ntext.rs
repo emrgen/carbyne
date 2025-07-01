@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use std::io::BufRead;
 use std::ops::Deref;
 
@@ -8,6 +9,7 @@ use crate::id::{Id, IdRange, Split, WithId, WithIdRange};
 use crate::item::{Content, ItemData, ItemIterator, ItemKind, ItemRef};
 use crate::store::WeakStoreRef;
 use crate::types::Type;
+use crate::NString;
 
 #[derive(Clone, Debug)]
 pub struct NText {
@@ -18,25 +20,25 @@ impl NText {
     pub(crate) fn on_insert(&self, p0: &Type) {}
 }
 
-impl NText {
-    pub(crate) fn slice(&self, start: u32, end: u32) -> Vec<Type> {
-        let start = self.find_at_offset(start);
-        let end = self.find_at_offset(end);
-
-        let store = self.store.upgrade().unwrap();
-        if let Some(item) = &end.0 {
-            let items = item.split(end.1);
-            item.replace(items);
-        }
-
-        if let Some(item) = &start.0 {
-            let items = item.split(start.1);
-            item.replace(items);
-        }
-
-        Vec::new()
-    }
-}
+// impl NText {
+//     pub(crate) fn slice(&self, start: u32, end: u32) -> Vec<Type> {
+//         let start = self.find_at_offset(start);
+//         let end = self.find_at_offset(end);
+//
+//         let store = self.store.upgrade().unwrap();
+//         if let Some(item) = &end.0 {
+//             let items = item.split(end.1);
+//             item.replace(items);
+//         }
+//
+//         if let Some(item) = &start.0 {
+//             let items = item.split(start.1);
+//             item.replace(items);
+//         }
+//
+//         Vec::new()
+//     }
+// }
 
 impl NText {
     pub(crate) fn new(id: Id, store: WeakStoreRef) -> Self {
@@ -170,6 +172,12 @@ impl Serialize for NText {
         s.serialize_field("content", &serde_json::Value::Array(content))?;
 
         s.end()
+    }
+}
+
+impl Hash for NText {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
     }
 }
 
