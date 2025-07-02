@@ -3,6 +3,7 @@ use crate::delete::DeleteItem;
 use crate::natom::{AItem, InnerAtom, NAtom};
 use crate::nlist::{InnerList, NList};
 use crate::nmap::{InnerMap, NMap};
+use crate::nmove::{InnerMove, NMove};
 use crate::nstring::InnerString;
 use crate::ntext::InnerText;
 use crate::store::WeakStoreRef;
@@ -15,12 +16,87 @@ use std::hash::Hasher;
 use std::ops::Deref;
 use std::rc::Rc;
 
-pub(crate) trait InnerType {
+pub(crate) trait InnerFlag {
+    fn flag(&self) -> &u8;
+    fn flag_mut(&mut self) -> &mut u8;
+
+    fn is_visible(&self) -> bool {
+        !(self.is_deleted() || self.is_moved() || !self.is_active())
+    }
+
+    fn is_deleted(&self) -> bool {
+        (self.flag() | 0x01) == 0
+    }
+
+    fn is_moved(&self) -> bool {
+        (self.flag() | 0x02) == 0
+    }
+
+    fn is_active(&self) -> bool {
+        (self.flag() | 0x03) == 0
+    }
+
+    #[inline]
+    fn mark_deleted(&mut self) {
+        *self.flag_mut() |= 0x01;
+    }
+
+    #[inline]
+    fn unmark_deleted(&mut self) {
+        *self.flag_mut() &= !0x01;
+    }
+
+    fn mark_moved(&mut self) {
+        *self.flag_mut() |= 0x02;
+    }
+
+    fn unmark_moved(&mut self) {
+        *self.flag_mut() &= !0x02;
+    }
+
+    fn mark_active(&mut self) {
+        *self.flag_mut() |= 0x03;
+    }
+
+    fn unmark_active(&mut self) {
+        *self.flag_mut() &= !0x03;
+    }
+}
+
+macro_rules! impl_inner_flag {
+    ($t:ty) => {
+        impl InnerFlag for $t {
+            #[inline]
+            fn flag(&self) -> &u8 {
+                &self.flags
+            }
+            #[inline]
+            fn flag_mut(&mut self) -> &mut u8 {
+                &mut self.flags
+            }
+        }
+    };
+}
+
+macro_rules! impl_inner_flag_many {
+    ($($t:ty),*) => {
+        $(impl_inner_flag!($t);)*
+    };
+}
+
+impl_inner_flag_many!(
+    InnerList,
+    InnerMap,
+    InnerText,
+    InnerString,
+    InnerAtom,
+    InnerMove
+);
+
+pub(crate) trait InnerType: InnerFlag {
     fn store(&self) -> &WeakStoreRef;
     fn data(&self) -> &AItem;
     fn data_mut(&mut self) -> &mut AItem;
-    fn flag(&self) -> &u8;
-    fn flag_mut(&mut self) -> &mut u8;
 
     #[inline]
     fn id(&self) -> Id {
@@ -34,22 +110,6 @@ pub(crate) trait InnerType {
         let item = DeleteItem::new(id, self.id().range(1));
         store.borrow_mut().insert_delete(item);
         self.mark_deleted();
-    }
-
-    fn is_visible(&self) -> bool {
-        (self.flag() | 0x01) == 0
-    }
-
-    // fn is_visible(&self) -> bool {}
-
-    #[inline]
-    fn mark_deleted(&mut self) {
-        *self.flag_mut() |= 0x01;
-    }
-
-    #[inline]
-    fn unmark_deleted(&mut self) {
-        *self.flag_mut() &= !0x01;
     }
 
     fn field(&self, fields: &FieldMap) -> Option<String> {
@@ -73,12 +133,6 @@ macro_rules! impl_inner_type_inner {
             fn data_mut(&mut self) -> &mut AItem {
                 &mut self.data
             }
-            fn flag(&self) -> &u8 {
-                &self.flags
-            }
-            fn flag_mut(&mut self) -> &mut u8 {
-                &mut self.flags
-            }
         }
 
         impl Deref for $t {
@@ -99,28 +153,9 @@ macro_rules! impl_inner_type_inner_many {
 
 impl_inner_type_inner_many!(InnerList, InnerMap, InnerText);
 
-macro_rules! impl_inner_type {
+macro_rules! impl_inner_data_type {
     ($t:ty) => {
         impl $t {
-            pub(crate) fn depth(&self) -> u32 {
-                self.borrow().parent.as_ref().map_or(0, |t| t.depth() + 1)
-            }
-
-            #[inline]
-            pub(crate) fn field(&self, fields: &FieldMap) -> Option<String> {
-                self.borrow().field(fields)
-            }
-
-            #[inline]
-            pub(crate) fn set_parent(&self, parent: Option<Type>) {
-                self.borrow_mut().parent = parent;
-            }
-
-            #[inline]
-            pub(crate) fn get_parent(&self) -> Option<Type> {
-                self.borrow_mut().parent.clone()
-            }
-
             #[inline]
             pub(crate) fn set_field_id(&self, field_id: FieldId) {
                 self.borrow_mut().data.set_field(field_id);
@@ -159,6 +194,75 @@ macro_rules! impl_inner_type {
             #[inline]
             pub(crate) fn get_parent_id(&self) -> Option<Id> {
                 self.borrow_mut().data.parent_id().clone()
+            }
+
+            pub(crate) fn is_deleted(&self) -> bool {
+                self.borrow().is_deleted()
+            }
+
+            pub(crate) fn is_moved(&self) -> bool {
+                self.borrow().is_moved()
+            }
+
+            pub(crate) fn is_active(&self) -> bool {
+                self.borrow().is_active()
+            }
+
+            pub(crate) fn mark_moved(&self) {
+                self.borrow_mut().mark_moved();
+            }
+
+            pub(crate) fn unmark_moved(&self) {
+                self.borrow_mut().unmark_moved();
+            }
+
+            pub(crate) fn mark_deleted(&self) {
+                self.borrow_mut().mark_deleted();
+            }
+
+            pub(crate) fn unmark_deleted(&self) {
+                self.borrow_mut().unmark_deleted();
+            }
+
+            pub(crate) fn mark_active(&self) {
+                self.borrow_mut().mark_active();
+            }
+
+            pub(crate) fn unmark_active(&self) {
+                self.borrow_mut().unmark_active();
+            }
+        }
+    };
+}
+
+macro_rules! impl_inner_type_data_many {
+    ($($t:ty),*) => {
+        $(impl_inner_data_type!($t);)*
+    };
+}
+
+impl_inner_type_data_many!(NList, NMap, NText, NAtom, NMove, NString);
+
+macro_rules! impl_inner_type {
+    ($t:ty) => {
+        impl $t {
+            pub(crate) fn depth(&self) -> usize {
+                self.borrow().parent.as_ref().map_or(0, |t| t.depth() + 1)
+            }
+
+            #[inline]
+            pub(crate) fn field(&self, fields: &FieldMap) -> Option<String> {
+                self.borrow().field(fields)
+            }
+
+            #[inline]
+            pub(crate) fn set_parent(&self, parent: Option<Type>) {
+                self.borrow_mut().parent = parent;
+            }
+
+            #[inline]
+            pub(crate) fn get_parent(&self) -> Option<Type> {
+                self.borrow_mut().parent.clone()
             }
 
             #[inline]

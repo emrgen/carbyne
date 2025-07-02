@@ -4,6 +4,7 @@ use crate::delete::DeleteItem;
 use crate::doc::{Doc, DocMeta};
 use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::id::{Id, IdRange, Split, WithId, WithIdRange, WithTarget};
+use crate::inner_type::InnerFlag;
 use crate::item::{Content, ItemData, ItemKey, ItemKind, ItemRef, Linked, StartEnd, WithIndex};
 use crate::mark::Mark;
 use crate::natom::NAtom;
@@ -38,23 +39,9 @@ pub enum Type {
 
 impl Type {
     pub(crate) fn replace(&self, items: (Type, Type)) {
-        let store = self.store().upgrade().unwrap();
-        let mut store = store.borrow_mut();
-
-        if let Some(left) = self.left() {
-            left.set_right(Some(items.0.clone()));
+        if let Some(parent) = self.get_parent() {
+            // parent.replace_child(self, items);
         }
-
-        if let Some(right) = self.right() {
-            right.set_left(Some(items.1.clone()));
-        }
-
-        if let Some(parent) = self.parent() {
-            items.0.set_parent(Some(parent.clone()));
-            items.1.set_parent(Some(parent.clone()));
-        }
-
-        store.items.replace(&self.clone(), items);
     }
 }
 
@@ -133,196 +120,230 @@ impl Type {
 
     pub(crate) fn data(&self) -> ItemData {
         match self {
-            Type::List(n) => n.data(),
-            Type::Map(n) => n.data(),
-            Type::Text(n) => n.data(),
-            Type::String(n) => n.data(),
-            Type::Atom(n) => n.data(),
-            Type::Move(n) => n.data(),
-            Type::Mark(n) => n.data(),
+            // Type::List(n) => n.data(),
+            // Type::Map(n) => n.data(),
+            // Type::Text(n) => n.data(),
+            // Type::String(n) => n.data(),
+            // Type::Atom(n) => n.data(),
+            // Type::Move(n) => n.data(),
+            // Type::Mark(n) => n.data(),
             _ => panic!("data: not implemented"),
         }
     }
 
+    // #[inline]
+    // pub(crate) fn store(&self) -> WeakStoreRef {
+    //     match self {
+    //         Type::List(n) => n.get_left_id(),
+    //         Type::Map(n) => n.get_left_id(),
+    //         Type::Text(n) => n.get_left_id(),
+    //         Type::String(n) => n.get_left_id(),
+    //         Type::Move(n) => n.get_left_id(),
+    //         _ => panic!("set_left_id: not implemented"),
+    //     }
+    // }
+
     #[inline]
-    pub(crate) fn store(&self) -> WeakStoreRef {
-        self.item_ref().store.clone()
+    pub(crate) fn depth(&self) -> usize {
+        match self {
+            Type::List(n) => n.depth(),
+            Type::Map(n) => n.depth(),
+            Type::Text(n) => n.depth(),
+            Type::Move(n) => n.depth(),
+            _ => panic!("depth: not implemented"),
+        }
     }
 
     #[inline]
-    pub(crate) fn depth(&self) -> u32 {
-        self.item_ref().depth()
+    pub(crate) fn get_left_id(&self) -> Option<Id> {
+        match self {
+            Type::List(n) => n.get_left_id(),
+            Type::Map(n) => n.get_left_id(),
+            Type::Text(n) => n.get_left_id(),
+            Type::String(n) => n.get_left_id(),
+            Type::Move(n) => n.get_left_id(),
+            _ => panic!("set_left_id: not implemented"),
+        }
+    }
+
+    pub(crate) fn get_right_id(&self) -> Option<Id> {
+        match self {
+            Type::List(n) => n.get_right_id(),
+            Type::Map(n) => n.get_right_id(),
+            Type::Text(n) => n.get_right_id(),
+            Type::String(n) => n.get_right_id(),
+            Type::Move(n) => n.get_right_id(),
+            _ => panic!("get_right_id: not implemented"),
+        }
     }
 
     #[inline]
-    pub(crate) fn right_origin(&self) -> Option<Type> {
-        self.item_ref().borrow().right_origin(self.store())
+    pub(crate) fn get_parent_id(&self) -> Option<Id> {
+        match self {
+            Type::List(n) => n.get_parent().map(|p| p.id()),
+            Type::Map(n) => n.get_parent().map(|p| p.id()),
+            Type::Text(n) => n.get_parent().map(|p| p.id()),
+            Type::String(n) => n.get_parent().map(|p| p.id()),
+            Type::Move(n) => n.get_parent().map(|p| p.id()),
+            _ => panic!("get_parent_id: not implemented"),
+        }
     }
 
     #[inline]
-    pub(crate) fn left_origin(&self) -> Option<Type> {
-        self.item_ref().borrow().left_origin(self.store())
-    }
-
-    #[inline]
-    pub(crate) fn parent(&self) -> Option<Type> {
-        self.item_ref().borrow().parent.clone()
-    }
-
-    #[inline]
-    pub(crate) fn parent_id(&self) -> Option<Id> {
-        self.item_ref().borrow().data.parent_id
-    }
-
-    #[inline]
-    pub(crate) fn left_id(&self) -> Option<Id> {
-        self.item_ref().borrow().data.left_id
-    }
-
-    #[inline]
-    pub(crate) fn right_id(&self) -> Option<Id> {
-        self.item_ref().borrow().data.right_id
-    }
-
-    #[inline]
-    pub(crate) fn start_id(&self) -> Id {
-        self.item_ref().id().range(1).start_id()
-    }
-
-    #[inline]
-    pub(crate) fn end_id(&self) -> Id {
-        if let ItemKind::String = self.kind() {
-            self.item_ref().id().range(self.size()).end_id()
-        } else {
-            self.item_ref().id().range(1).end_id()
+    pub(crate) fn get_parent(&self) -> Option<Type> {
+        match self {
+            Type::List(n) => n.get_parent(),
+            Type::Map(n) => n.get_parent(),
+            Type::Text(n) => n.get_parent(),
+            Type::String(n) => n.get_parent(),
+            Type::Move(n) => n.get_parent(),
+            _ => panic!("parent_id: not implemented"),
         }
     }
 
     #[inline]
     pub(crate) fn set_parent(&self, parent: impl Into<Option<Type>>) {
-        self.item_ref()
-            .borrow_mut()
-            .parent
-            .clone_from(&parent.into());
+        let parent = parent.into();
+        match self {
+            Type::List(n) => n.set_parent(parent),
+            Type::Map(n) => n.set_parent(parent),
+            Type::Text(n) => n.set_parent(parent),
+            Type::String(n) => n.set_parent(parent),
+            Type::Move(n) => n.set_parent(parent),
+            _ => panic!("set_left_id: not implemented"),
+        }
     }
 
     #[inline]
-    pub(crate) fn set_parent_id(&self, parent_id: impl Into<Option<Id>>) {
-        self.item_ref()
-            .borrow_mut()
-            .parent_id
-            .clone_from(&parent_id.into());
+    pub(crate) fn set_left_id(&self, left_id: impl Into<Id>) {
+        let left_id = left_id.into();
+        match self {
+            Type::List(n) => n.set_left_id(left_id),
+            Type::Map(n) => n.set_left_id(left_id),
+            Type::Text(n) => n.set_left_id(left_id),
+            Type::String(n) => n.set_left_id(left_id),
+            Type::Atom(n) => n.set_left_id(left_id),
+            Type::Move(n) => n.set_left_id(left_id),
+            // Type::Mark(n) => n.set_right_id(right_id),
+            _ => panic!("set_left_id: not implemented"),
+        }
     }
 
     #[inline]
-    pub(crate) fn set_left(&self, left: impl Into<Option<Type>>) {
-        self.item_ref().borrow_mut().left.clone_from(&left.into());
-    }
-
-    #[inline]
-    pub(crate) fn set_left_id(&self, left_id: impl Into<Option<Id>>) {
-        self.item_ref()
-            .borrow_mut()
-            .left_id
-            .clone_from(&left_id.into());
-    }
-
-    #[inline]
-    pub(crate) fn set_right(&self, right: impl Into<Option<Type>>) {
-        self.item_ref().borrow_mut().right.clone_from(&right.into());
-    }
-
-    #[inline]
-    pub(crate) fn set_right_id(&self, right_id: impl Into<Option<Id>>) {
-        self.item_ref()
-            .borrow_mut()
-            .right_id
-            .clone_from(&right_id.into());
-    }
-
-    #[inline]
-    pub(crate) fn set_start(&self, start: impl Into<Option<Type>>) {
-        self.item_ref().borrow_mut().start.clone_from(&start.into());
-    }
-
-    #[inline]
-    pub(crate) fn set_end(&self, end: impl Into<Option<Type>>) {
-        self.item_ref().borrow_mut().end.clone_from(&end.into());
+    pub(crate) fn set_right_id(&self, right_id: impl Into<Id>) {
+        let right_id = right_id.into();
+        match self {
+            Type::List(n) => n.set_right_id(right_id),
+            Type::Map(n) => n.set_right_id(right_id),
+            Type::Text(n) => n.set_right_id(right_id),
+            Type::String(n) => n.set_right_id(right_id),
+            Type::Atom(n) => n.set_right_id(right_id),
+            Type::Move(n) => n.set_right_id(right_id),
+            _ => panic!("set_right_id: not implemented"),
+        }
     }
 
     // insert after skips the list index lookup and directly inserts the item after the current item
     pub fn insert_after(&self, item: impl Into<Type>) {
-        let item = item.into();
-
-        let parent = self.parent();
-        let next = self.right();
-
-        item.set_parent_id(parent.as_ref().map(|p| p.id()));
-        item.set_left_id(Some(self.id()));
-        item.set_right_id(next.as_ref().map(|n| n.id()));
-
-        // item.set_parent(parent.clone());
-        item.set_left(self.clone());
-        item.set_right(next.clone());
-
-        self.set_right(item.clone());
-
-        if let Some(next) = next {
-            next.set_left(item.clone());
-        } else if let Some(ref parent) = parent {
-            parent.set_end(item.clone());
-        }
+        // let item = item.into();
+        //
+        // let parent = self.parent();
+        // let next = self.right();
+        //
+        // item.set_parent_id(parent.as_ref().map(|p| p.id()));
+        // item.set_left_id(Some(self.id()));
+        // item.set_right_id(next.as_ref().map(|n| n.id()));
+        //
+        // // item.set_parent(parent.clone());
+        // item.set_left(self.clone());
+        // item.set_right(next.clone());
+        //
+        // self.set_right(item.clone());
+        //
+        // if let Some(next) = next {
+        //     next.set_left(item.clone());
+        // } else if let Some(ref parent) = parent {
+        //     parent.set_end(item.clone());
+        // }
     }
 
     // insert before skips the list index lookup and directly inserts the item before the current item
     pub fn insert_before(&self, item: Type) {
-        let parent = self.parent();
-        let prev = self.left();
-
-        item.set_parent_id(parent.as_ref().map(|p| p.id()));
-        item.set_left_id(prev.as_ref().map(|p| p.id()));
-        item.set_right_id(Some(self.id()));
-
-        item.set_parent(parent.clone());
-        item.set_left(prev.clone());
-        item.set_right(self.clone());
-
-        self.set_left(item.clone());
-
-        if let Some(prev) = prev {
-            prev.set_right(item.clone());
-        } else if let Some(ref parent) = parent {
-            parent.set_start(item.clone());
-        }
-
-        parent.unwrap().on_insert(&item);
+        // let parent = self.parent();
+        // let prev = self.left();
+        //
+        // item.set_parent_id(parent.as_ref().map(|p| p.id()));
+        // item.set_left_id(prev.as_ref().map(|p| p.id()));
+        // item.set_right_id(Some(self.id()));
+        //
+        // item.set_parent(parent.clone());
+        // item.set_left(prev.clone());
+        // item.set_right(self.clone());
+        //
+        // self.set_left(item.clone());
+        //
+        // if let Some(prev) = prev {
+        //     prev.set_right(item.clone());
+        // } else if let Some(ref parent) = parent {
+        //     parent.set_start(item.clone());
+        // }
+        //
+        // parent.unwrap().on_insert(&item);
     }
 
     #[inline]
     pub(crate) fn is_moved(&self) -> bool {
-        self.item_ref().borrow().is_moved()
+        match self {
+            Type::List(n) => n.is_moved(),
+            Type::Map(n) => n.is_moved(),
+            Type::Text(n) => n.is_moved(),
+            Type::Atom(n) => n.is_moved(),
+            Type::Move(n) => n.is_moved(),
+            _ => panic!("is_moved: not implemented"),
+        }
     }
 
     #[inline]
     pub(crate) fn is_deleted(&self) -> bool {
-        self.item_ref().borrow().is_deleted()
+        match self {
+            Type::List(n) => n.is_deleted(),
+            Type::Map(n) => n.is_deleted(),
+            Type::Text(n) => n.is_deleted(),
+            Type::Atom(n) => n.is_deleted(),
+            Type::Move(n) => n.is_deleted(),
+            _ => panic!("is_deleted: not implemented"),
+        }
     }
 
     #[inline]
-    pub(crate) fn is_inactive(&self) -> bool {
-        self.item_ref().borrow().is_inactive()
+    pub(crate) fn is_active(&self) -> bool {
+        match self {
+            Type::List(n) => n.is_active(),
+            Type::Map(n) => n.is_active(),
+            Type::Text(n) => n.is_active(),
+            Type::Atom(n) => n.is_active(),
+            Type::Move(n) => n.is_active(),
+            _ => panic!("is_active: not implemented"),
+        }
     }
 
     #[inline]
     pub(crate) fn is_visible(&self) -> bool {
-        !self.is_moved() && !self.is_deleted() && !self.is_inactive()
+        match self {
+            Type::List(n) => n.borrow().is_visible(),
+            Type::Map(n) => n.borrow().is_visible(),
+            Type::Text(n) => n.borrow().is_visible(),
+            Type::Atom(n) => n.borrow().is_visible(),
+            Type::Move(n) => n.borrow().is_visible(),
+            _ => panic!("is_active: not implemented"),
+        }
     }
 
     #[inline]
-    pub(crate) fn index_of(&self, target: &Type) -> i32 {
+    pub(crate) fn index_of(&self, target: &Type) -> Option<usize> {
         match self {
             Type::List(list) => list.index_of(target),
-            _ => -1,
+            _ => None,
         }
     }
 
@@ -354,13 +375,12 @@ impl Type {
 
     // disconnect from the document tree
     pub(crate) fn disconnect(&self) {
-        let parent = self.parent();
         // print_yaml(&self);
-        match self.parent() {
-            Some(Type::List(n)) => n.remove_child(self),
-            Some(Type::Map(n)) => n.remove_child(self),
+        match self.get_parent() {
+            // Some(Type::List(n)) => n.remove_child(self),
+            // Some(Type::Map(n)) => n.remove_child(self),
             // Type::Text(n) => n.add_mark(mark),
-            Some(parent) => panic!("disconnect is not implemented for {}", parent.kind()),
+            // Some(parent) => panic!("disconnect is not implemented for {}", parent.kind()),
             _ => panic!("disconnect called for an orphan item"),
         }
     }
@@ -374,9 +394,9 @@ impl Type {
 
     #[inline]
     pub(crate) fn remove_mark(&self, mark: Mark) {
-        let id = self.store().upgrade().unwrap().borrow_mut().next_id();
-        // let marks = self.item_ref().borrow().get_marks();
-        let item = DeleteItem::new(id, self.range());
+        // let id = self.store().upgrade().unwrap().borrow_mut().next_id();
+        // // let marks = self.item_ref().borrow().get_marks();
+        // let item = DeleteItem::new(id, self.range());
     }
 
     #[inline]
@@ -401,20 +421,20 @@ impl Type {
         }
     }
 
-    pub fn content(&self) -> Content {
-        match self {
-            Type::String(n) => n.content(),
-            Type::Atom(n) => n.content(),
-            Type::Text(n) => n.content(),
-            Type::Move(n) => n.content(),
-            // Type::Mark(n) => n.content(),
-            Type::List(n) => n.content(),
-            Type::Map(n) => n.content(),
-            _ => {
-                panic!("content: not implemented for {:?}", self.kind())
-            }
-        }
-    }
+    // pub fn content(&self) -> Content {
+    //     match self {
+    //         Type::String(n) => n.content(),
+    //         Type::Atom(n) => n.content(),
+    //         Type::Text(n) => n.content(),
+    //         Type::Move(n) => n.content(),
+    //         // Type::Mark(n) => n.content(),
+    //         Type::List(n) => n.content(),
+    //         Type::Map(n) => n.content(),
+    //         _ => {
+    //             panic!("content: not implemented for {:?}", self.kind())
+    //         }
+    //     }
+    // }
 
     /// move the item to the given parent at the given offset
     pub fn move_to(&self, parent: impl Into<Type>, offset: usize) {
@@ -431,7 +451,7 @@ impl Type {
 
     /// move the item after the given item
     pub fn move_after(&self, before: &Type) {
-        if let Some(parent) = before.parent() {
+        if let Some(parent) = before.get_parent() {
             match parent {
                 Type::List(n) => n.move_after(before, self),
                 _ => panic!(
@@ -445,7 +465,7 @@ impl Type {
 
     /// move the item before the given item
     pub fn move_before(&self, after: &Type) {
-        if let Some(parent) = after.parent() {
+        if let Some(parent) = after.get_parent() {
             match parent {
                 Type::List(n) => n.move_before(after, self),
                 _ => panic!(
@@ -626,34 +646,12 @@ impl Type {
 
     pub(crate) fn on_insert(&self, child: &Type) {
         match self {
-            Type::List(n) => {
-                Self::add_frac_index(child);
-                n.on_insert(child)
-            }
-            Type::Text(n) => {
-                // Self::add_frac_index(child);
-                n.on_insert(child)
-            }
-            Type::Map(n) => {}
+            // Type::List(n) => n.on_insert(child),
+            // Type::Text(n) => n.on_insert(child),
+            // Type::Map(n) => {}
             _ => panic!("on_insert: not implemented for {:?}", self.kind()),
         }
     }
-
-    pub(crate) fn add_frac_index(&self) {
-        let index = match (self.left(), self.right()) {
-            (Some(left), Some(right)) => {
-                FractionalIndex::new_between(&left.index(), &right.index()).unwrap()
-            }
-            (Some(left), None) => FractionalIndex::new_after(&left.index()),
-            (None, Some(right)) => FractionalIndex::new_before(&right.index()),
-            (None, None) => FractionalIndex::default(),
-        };
-
-        self.item_ref().borrow_mut().index = index;
-    }
-
-    //
-    pub(crate) fn rollback(&self) {}
 
     pub(crate) fn on_delete(&self, child: &Type) {}
 
@@ -662,41 +660,6 @@ impl Type {
     pub(crate) fn on_move(&self, child: &Type) {}
 
     pub(crate) fn on_unmove(&self, child: &Type) {}
-}
-
-impl WithIndex for Type {
-    fn index(&self) -> FractionalIndex {
-        self.item_ref().index()
-    }
-}
-
-impl Linked for Type {
-    #[inline]
-    fn left(&self) -> Option<Type> {
-        self.item_ref().borrow().left.clone()
-    }
-
-    #[inline]
-    fn right(&self) -> Option<Type> {
-        self.item_ref().borrow().right.clone()
-    }
-
-    #[inline]
-    fn is_visible(&self) -> bool {
-        !self.is_deleted() || !self.is_moved()
-    }
-}
-
-impl StartEnd for Type {
-    #[inline]
-    fn start(&self) -> Option<Type> {
-        self.item_ref().borrow().start.clone()
-    }
-
-    #[inline]
-    fn end(&self) -> Option<Type> {
-        self.item_ref().borrow().end.clone()
-    }
 }
 
 impl Serialize for Type {
@@ -837,10 +800,7 @@ impl<T: Into<Type> + Clone> From<&T> for Type {
 
 impl Ord for Type {
     fn cmp(&self, other: &Self) -> Ordering {
-        let store = self.store().upgrade().unwrap();
-        let store = store.borrow();
-        self.id().compare(&other.id(), &store.state.clients)
-        // self.id().compare(&other.id(), &store.state.clients)
+        self.id().cmp(&other.id())
     }
 }
 impl PartialOrd for Type {

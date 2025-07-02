@@ -243,6 +243,12 @@ impl Deref for NAtom {
     }
 }
 
+impl Hash for NAtom {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
+    }
+}
+
 impl WithId for NAtom {
     #[inline]
     fn id(&self) -> Id {

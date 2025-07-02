@@ -206,7 +206,12 @@ impl NList {
     pub(crate) fn prepend(&self, item: impl Into<Type>) {
         let item = item.into();
         item.set_parent(Some(self.into()));
-        self.inner.borrow_mut().content.insert(0, item.clone());
+
+        let content = &mut self.borrow_mut().content;
+
+        // set the right id
+        content.first().map(|f| item.set_right_id(f.id()));
+        content.prepend(item);
     }
 
     #[inline]
@@ -214,7 +219,11 @@ impl NList {
     pub fn append(&self, item: impl Into<Type>) {
         let item = item.into();
         item.set_parent(Some(self.into()));
-        self.borrow_mut().content.insert(self.size(), item.clone());
+
+        let content = &mut self.borrow_mut().content;
+        // set the left id
+        content.last().map(|f| item.set_left_id(f.id()));
+        content.prepend(item);
     }
 
     pub fn insert(&self, offset: usize, item: impl Into<Type>) {

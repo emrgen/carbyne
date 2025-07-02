@@ -140,43 +140,13 @@ impl NString {
     }
 
     #[inline]
-    pub(crate) fn set_field_id(&self, field_id: FieldId) {
-        self.borrow_mut().data.set_field(field_id);
+    pub(crate) fn set_parent(&self, parent: Option<Type>) {
+        self.borrow_mut().parent = parent.unwrap().as_text();
     }
 
     #[inline]
-    pub(crate) fn get_field_id(&self) -> Option<FieldId> {
-        self.borrow_mut().data.field_id().clone()
-    }
-
-    #[inline]
-    pub(crate) fn set_left_id(&self, left_id: Id) {
-        self.borrow_mut().data.set_left(left_id);
-    }
-
-    #[inline]
-    pub(crate) fn get_left_id(&self) -> Option<Id> {
-        self.borrow_mut().data.left_id().clone()
-    }
-
-    #[inline]
-    pub(crate) fn set_right_id(&self, right_id: Id) {
-        self.borrow_mut().data.set_right(right_id);
-    }
-
-    #[inline]
-    pub(crate) fn get_right_id(&self) -> Option<Id> {
-        self.borrow_mut().data.right_id().clone()
-    }
-
-    #[inline]
-    pub(crate) fn set_parent_id(&self, parent_id: Id) {
-        self.borrow_mut().data.set_parent(parent_id);
-    }
-
-    #[inline]
-    pub(crate) fn get_parent_id(&self) -> Option<Id> {
-        self.borrow_mut().data.parent_id().clone()
+    pub(crate) fn get_parent(&self) -> Option<Type> {
+        self.borrow_mut().parent.clone().map(Type::from)
     }
 
     #[inline]
@@ -184,10 +154,12 @@ impl NString {
         self.borrow_mut().delete();
     }
 
+    #[inline]
     pub(crate) fn text_content(&self) -> String {
         self.borrow().content.as_string()
     }
 
+    #[inline]
     pub(crate) fn write_content(&self, buf: &mut String) {
         self.borrow().content.write_content(buf);
     }

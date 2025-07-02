@@ -3,18 +3,21 @@ use crate::item::{Content, ItemData, ItemIterator, ItemKey, ItemKind, ItemRef};
 use crate::natom::AItem;
 use crate::nlist::{ListContent, NList};
 use crate::nmark::NMark;
+use crate::ntext::InnerText;
 use crate::store::WeakStoreRef;
 use crate::{NString, Type};
 use fake::Opt;
 use serde::ser::SerializeStruct;
 use serde::Serialize;
 use serde_json::Value;
+use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub(crate) struct InnerMove {
-    pub(crate) store: WeakStoreRef,
+    // pub(crate) store: WeakStoreRef,
     pub(crate) flags: u8,
     pub(crate) data: AItem,
     pub(crate) parent: Option<Type>,
@@ -25,27 +28,36 @@ pub(crate) struct InnerMove {
 /// It is similar to proxy but one instance is valid for multiple move operations.
 #[derive(Debug, Clone)]
 pub(crate) struct NMove {
-    pub(crate) item: ItemRef,
+    inner: Rc<RefCell<InnerMove>>,
 }
 
 impl NMove {
     pub(crate) fn new(id: Id, target: Type, store: WeakStoreRef) -> NMove {
-        let data = ItemData {
-            id,
-            kind: ItemKind::Move,
-            content: Content::Id(target.id()),
-            ..ItemData::default()
-        };
-
-        let mut item = ItemRef::new(data.into(), store);
-        item.set_target(target);
-
-        Self { item }
+        let data = AItem::new(id).with_kind(ItemKind::Text);
+        Self {
+            inner: Rc::new(RefCell::new(InnerMove {
+                // store,
+                flags: 0,
+                data,
+                parent: None,
+                target: None,
+            })),
+        }
     }
 
     #[inline]
-    pub(crate) fn item_ref(&self) -> ItemRef {
-        self.item.clone()
+    pub(crate) fn set_parent(&self, parent: Option<Type>) {
+        self.borrow_mut().parent = parent;
+    }
+
+    #[inline]
+    pub(crate) fn get_parent(&self) -> Option<Type> {
+        self.borrow_mut().parent.clone()
+    }
+
+    #[inline]
+    pub(crate) fn depth(&self) -> usize {
+        self.borrow().parent.as_ref().map_or(0, |t| t.depth() + 1)
     }
 
     #[inline]
@@ -84,7 +96,7 @@ impl NMove {
 
     #[inline]
     fn delete(&self) {
-        self.item_ref().delete(1);
+        unimplemented!("NMove::delete is not implemented yet")
     }
 
     #[inline]
@@ -163,22 +175,22 @@ impl Hash for NMove {
 impl WithId for NMove {
     #[inline]
     fn id(&self) -> Id {
-        self.item.borrow().id()
+        self.borrow().data.id()
     }
 }
 
 impl WithIdRange for NMove {
     #[inline]
     fn range(&self) -> IdRange {
-        self.borrow().id().range(1)
+        self.id().range(1)
     }
 }
 
 impl Deref for NMove {
-    type Target = ItemRef;
+    type Target = Rc<RefCell<InnerMove>>;
 
     fn deref(&self) -> &Self::Target {
-        &self.item
+        &self.inner
     }
 }
 
