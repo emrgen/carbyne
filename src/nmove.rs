@@ -1,15 +1,25 @@
 use crate::id::{Id, IdRange, WithId, WithIdRange, WithTarget};
 use crate::item::{Content, ItemData, ItemIterator, ItemKey, ItemKind, ItemRef};
-use crate::nlist::NList;
+use crate::natom::AItem;
+use crate::nlist::{ListContent, NList};
 use crate::nmark::NMark;
 use crate::store::WeakStoreRef;
-use crate::Type;
+use crate::{NString, Type};
 use fake::Opt;
 use serde::ser::SerializeStruct;
 use serde::Serialize;
 use serde_json::Value;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
+
+#[derive(Debug)]
+pub(crate) struct InnerMove {
+    pub(crate) store: WeakStoreRef,
+    pub(crate) flags: u8,
+    pub(crate) data: AItem,
+    pub(crate) parent: Option<Type>,
+    pub(crate) target: Option<Type>,
+}
 
 /// NMove represents a move operation in the document.
 /// It is similar to proxy but one instance is valid for multiple move operations.
@@ -48,7 +58,7 @@ impl NMove {
     }
 
     #[inline]
-    pub(crate) fn size(&self) -> u32 {
+    pub(crate) fn size(&self) -> usize {
         if let Some(target) = self.get_target().as_ref() {
             target.size()
         } else {
@@ -92,7 +102,7 @@ impl NMove {
     }
 
     #[inline]
-    fn insert(&self, offset: u32, item: Type) {
+    fn insert(&self, offset: usize, item: Type) {
         if let Some(target) = self.get_target().as_ref() {
             target.insert(offset, item);
         }
@@ -132,6 +142,18 @@ impl Serialize for NMove {
     }
 }
 
+impl WithTarget for NMove {
+    #[inline]
+    fn set_target(&self, target: Type) {
+        self.borrow_mut().target = Some(target);
+    }
+
+    #[inline]
+    fn get_target(&self) -> Option<Type> {
+        self.borrow().target.clone()
+    }
+}
+
 impl Hash for NMove {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id().hash(state);
@@ -152,12 +174,6 @@ impl WithIdRange for NMove {
     }
 }
 
-impl From<ItemRef> for NMove {
-    fn from(item: ItemRef) -> Self {
-        Self { item }
-    }
-}
-
 impl Deref for NMove {
     type Target = ItemRef;
 
@@ -171,7 +187,7 @@ mod tests {
     use super::*;
     use crate::{print_yaml, Doc};
 
-    fn get_text(item: ItemRef) -> String {
+    fn get_text(item: &Type) -> String {
         if let Some(target) = item.get_target() {
             target.text_content()
         } else {
@@ -180,7 +196,12 @@ mod tests {
     }
 
     fn get_list_text(list: &NList) -> Vec<String> {
-        list.visible_item_iter().map(get_text).collect()
+        list.borrow()
+            .content
+            .iter()
+            .filter(|t| t.is_visible())
+            .map(get_text)
+            .collect()
     }
 
     macro_rules! append {

@@ -1,4 +1,4 @@
-use crate::bimapid::FieldId;
+use crate::bimapid::{FieldId, FieldMap};
 use crate::delete::DeleteItem;
 use crate::natom::{AItem, InnerAtom, NAtom};
 use crate::nlist::{InnerList, NList};
@@ -19,6 +19,7 @@ pub(crate) trait InnerType {
     fn store(&self) -> &WeakStoreRef;
     fn data(&self) -> &AItem;
     fn data_mut(&mut self) -> &mut AItem;
+    fn flag(&self) -> &u8;
     fn flag_mut(&mut self) -> &mut u8;
 
     #[inline]
@@ -35,6 +36,12 @@ pub(crate) trait InnerType {
         self.mark_deleted();
     }
 
+    fn is_visible(&self) -> bool {
+        (self.flag() | 0x01) == 0
+    }
+
+    // fn is_visible(&self) -> bool {}
+
     #[inline]
     fn mark_deleted(&mut self) {
         *self.flag_mut() |= 0x01;
@@ -45,20 +52,9 @@ pub(crate) trait InnerType {
         *self.flag_mut() &= !0x01;
     }
 
-    fn field(&self) -> Option<String> {
+    fn field(&self, fields: &FieldMap) -> Option<String> {
         if let Some(field) = self.data().field_id() {
-            return self
-                .store()
-                .upgrade()
-                .map(|store| {
-                    store
-                        .borrow()
-                        .fields
-                        .get_field(&field)
-                        .cloned()
-                        .map(|id| id.to_string())
-                })
-                .flatten();
+            return fields.get_field(&field).cloned().map(|id| id.to_string());
         }
 
         None
@@ -76,6 +72,9 @@ macro_rules! impl_inner_type_inner {
             }
             fn data_mut(&mut self) -> &mut AItem {
                 &mut self.data
+            }
+            fn flag(&self) -> &u8 {
+                &self.flags
             }
             fn flag_mut(&mut self) -> &mut u8 {
                 &mut self.flags
@@ -98,7 +97,7 @@ macro_rules! impl_inner_type_inner_many {
     };
 }
 
-impl_inner_type_inner_many!(InnerList, InnerMap, InnerText, InnerAtom);
+impl_inner_type_inner_many!(InnerList, InnerMap, InnerText);
 
 macro_rules! impl_inner_type {
     ($t:ty) => {
@@ -108,8 +107,8 @@ macro_rules! impl_inner_type {
             }
 
             #[inline]
-            pub(crate) fn field(&self) -> Option<String> {
-                self.borrow().field()
+            pub(crate) fn field(&self, fields: &FieldMap) -> Option<String> {
+                self.borrow().field(fields)
             }
 
             #[inline]
@@ -191,4 +190,4 @@ macro_rules! impl_inner_type_many {
     };
 }
 
-impl_inner_type_many!(NList, NMap, NText, NAtom);
+impl_inner_type_many!(NList, NMap, NText);

@@ -1,14 +1,9 @@
-use fake::Opt;
-use fractional_index::FractionalIndex;
-use serde::Serialize;
-use serde_json::Value;
-use std::cmp::Ordering;
-
+use crate::bimapid::FieldMap;
 use crate::decoder::{Decode, DecodeContext, Decoder};
 use crate::delete::DeleteItem;
 use crate::doc::{Doc, DocMeta};
 use crate::encoder::{Encode, EncodeContext, Encoder};
-use crate::id::{Id, IdRange, Split, WithId, WithIdRange};
+use crate::id::{Id, IdRange, Split, WithId, WithIdRange, WithTarget};
 use crate::item::{Content, ItemData, ItemKey, ItemKind, ItemRef, Linked, StartEnd, WithIndex};
 use crate::mark::Mark;
 use crate::natom::NAtom;
@@ -20,6 +15,12 @@ use crate::nstring::NString;
 use crate::ntext::NText;
 use crate::store::{StoreRef, WeakStoreRef};
 use crate::{print_yaml, Client};
+use fake::Opt;
+use fractional_index::FractionalIndex;
+use serde::Serialize;
+use serde_json::Value;
+use std::cmp::Ordering;
+use std::ops::Range;
 
 /// Type is a wrapper around the different item types in the store.
 #[derive(Debug, Clone, Default, Hash)]
@@ -133,13 +134,13 @@ impl Type {
     pub(crate) fn data(&self) -> ItemData {
         match self {
             Type::List(n) => n.data(),
-            Type::Map(n) => n.size(),
-            Type::Text(n) => n.size(),
-            Type::String(n) => n.size(),
-            Type::Atom(n) => n.size(),
-            Type::Move(n) => n.size(),
-            Type::Mark(n) => n.size(),
-            _ => panic!("size: not implemented"),
+            Type::Map(n) => n.data(),
+            Type::Text(n) => n.data(),
+            Type::String(n) => n.data(),
+            Type::Atom(n) => n.data(),
+            Type::Move(n) => n.data(),
+            Type::Mark(n) => n.data(),
+            _ => panic!("data: not implemented"),
         }
     }
 
@@ -327,12 +328,28 @@ impl Type {
 
     #[inline]
     pub fn kind(&self) -> ItemKind {
-        self.item_ref().kind()
+        match self {
+            Type::List(n) => ItemKind::List,
+            Type::Map(n) => ItemKind::Map,
+            Type::Text(n) => ItemKind::Text,
+            Type::String(n) => ItemKind::String,
+            Type::Atom(n) => ItemKind::Atom,
+            Type::Move(n) => ItemKind::Move,
+            // Type::Move(n) => ItemKind::FlatMove,
+            Type::Mark(n) => ItemKind::Mark,
+            _ => panic!("size: not implemented"),
+        }
     }
 
     #[inline]
-    pub fn field(&self) -> Option<String> {
-        self.item_ref().field()
+    pub(crate) fn field(&self, fields: &FieldMap) -> Option<String> {
+        match self {
+            // Type::List(n) => n.field(),
+            // Type::Map(n) => n.field(),
+            // Type::Text(n) => n.field(),
+            Type::Atom(n) => n.field(fields),
+            _ => panic!("size: not implemented"),
+        }
     }
 
     // disconnect from the document tree
@@ -348,15 +365,9 @@ impl Type {
         }
     }
 
-    pub(crate) fn add_mark(&self, mark: Mark) {
+    pub(crate) fn add_mark(&self, mark: Mark, range: Range<usize>) {
         match self {
-            // Type::List(n) => n.add_mark(mark),
-            Type::Map(n) => n.add_mark(mark),
-            // Type::Text(n) => n.add_mark(mark),
-            Type::String(n) => n.add_mark(mark),
-            // Type::Atom(n) => n.add_mark(mark),
-            // Type::Move(n) => n.add_mark(mark),
-            Type::Identity => panic!("add_mark: not implemented for identity"),
+            // Type::Text(n) => n.add_mark(mark, range),
             _ => panic!("add_mark: not implemented"),
         }
     }
@@ -366,6 +377,14 @@ impl Type {
         let id = self.store().upgrade().unwrap().borrow_mut().next_id();
         // let marks = self.item_ref().borrow().get_marks();
         let item = DeleteItem::new(id, self.range());
+    }
+
+    #[inline]
+    pub fn get_target(&self) -> Option<Type> {
+        match self {
+            Type::Move(n) => n.get_target(),
+            _ => panic!("target: not implemented"),
+        }
     }
 
     #[inline]
@@ -388,7 +407,7 @@ impl Type {
             Type::Atom(n) => n.content(),
             Type::Text(n) => n.content(),
             Type::Move(n) => n.content(),
-            Type::Mark(n) => n.content(),
+            // Type::Mark(n) => n.content(),
             Type::List(n) => n.content(),
             Type::Map(n) => n.content(),
             _ => {
@@ -398,7 +417,7 @@ impl Type {
     }
 
     /// move the item to the given parent at the given offset
-    pub fn move_to(&self, parent: impl Into<Type>, offset: u32) {
+    pub fn move_to(&self, parent: impl Into<Type>, offset: usize) {
         let parent = parent.into();
         match parent {
             Type::List(n) => n.move_to(offset, self),
@@ -457,7 +476,7 @@ impl Type {
     }
 
     #[inline]
-    pub fn insert(&self, offset: u32, item: impl Into<Type>) {
+    pub fn insert(&self, offset: usize, item: impl Into<Type>) {
         match self {
             Type::List(n) => n.insert(offset, item),
             Type::Text(n) => {
@@ -497,7 +516,13 @@ impl Type {
 
     #[inline]
     pub fn delete(&self) {
-        self.item_ref().delete(1);
+        match self {
+            Type::List(n) => n.delete(),
+            Type::Map(n) => n.delete(),
+            Type::Text(n) => n.delete(),
+            // Type::Atom(n) => n.delete(),
+            _ => panic!("clear: not implemented"),
+        }
     }
 
     #[inline]
@@ -527,10 +552,10 @@ impl Type {
     }
 
     #[inline]
-    pub(crate) fn split(&self, offset: u32) -> (Type, Type) {
+    pub(crate) fn split(&self, offset: usize) -> (Type, Type) {
         match self {
-            Type::String(n) => n.split(offset).unwrap(),
-            Type::Mark(n) => n.split(offset).unwrap(),
+            // Type::String(n) => n.split(offset).unwrap(),
+            // Type::Mark(n) => n.split(offset).unwrap(),
             _ => panic!("split: not implemented for {:?}", self.kind()),
         }
     }

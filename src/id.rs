@@ -12,6 +12,7 @@ use crate::change::ChangeId;
 use crate::decoder::{Decode, DecodeContext, Decoder};
 use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::hash::calculate_hash;
+use crate::store::WeakStoreRef;
 use crate::Type;
 
 /// ClientId is an u32 id that is used to identify a client
@@ -199,7 +200,11 @@ impl Display for Client {
 
 pub(crate) trait Split {
     type Target;
-    fn split(&self, offset: u32) -> Result<(Self::Target, Self::Target), String>;
+    fn split(
+        &self,
+        store: &WeakStoreRef,
+        offset: usize,
+    ) -> Result<(Self::Target, Self::Target), String>;
 }
 
 #[derive(Debug, Clone, Copy, Default, Hash)]
@@ -445,13 +450,14 @@ impl IdRange {
     }
 
     // split the IdRange at the given offset, left side will have the offset size
-    pub(crate) fn split(&self, offset: u32) -> Result<(IdRange, IdRange), String> {
+    pub(crate) fn split(&self, offset: usize) -> Result<(IdRange, IdRange), String> {
+        let offset = (offset as u32);
         if offset == 0 || offset >= self.size() {
             return Err("Cannot split IdRange at invalid position".to_string());
         }
 
         Ok((
-            IdRange::new(self.client, self.start, self.start + offset - 1),
+            IdRange::new(self.client, self.start, self.start + (offset as u32) - 1),
             IdRange::new(self.client, self.start + offset, self.end),
         ))
     }
@@ -546,14 +552,6 @@ pub(crate) trait WithTarget {
 /// WithIdRange trait is used to get the ID range of an object
 pub(crate) trait WithIdRange {
     fn range(&self) -> IdRange;
-}
-
-impl Split for IdRange {
-    type Target = IdRange;
-    #[inline]
-    fn split(&self, at: ClockTick) -> Result<(IdRange, IdRange), String> {
-        self.split(at)
-    }
 }
 
 impl std::fmt::Debug for IdRange {

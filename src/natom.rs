@@ -1,4 +1,4 @@
-use crate::bimapid::FieldId;
+use crate::bimapid::{FieldId, FieldMap};
 use crate::delete::DeleteItem;
 use crate::id::{Id, IdRange, WithId, WithIdRange};
 use crate::inner_type::InnerType;
@@ -174,11 +174,21 @@ pub struct AItemData {
 // Atom is a holds a fixed Content
 #[derive(Debug)]
 pub(crate) struct InnerAtom {
-    pub(crate) store: WeakStoreRef,
-    pub(crate) flags: u8,
+    // pub(crate) store: WeakStoreRef,
+    pub(crate) flags: u8, //
     pub(crate) data: AItem,
-    pub(crate) parent: Option<Type>,
+    // pub(crate) parent: Option<Type>,
     pub(crate) content: Content,
+}
+
+impl InnerAtom {
+    fn field(&self, fields: &FieldMap) -> Option<String> {
+        if let Some(field) = self.data.field_id() {
+            return fields.get_field(&field).cloned().map(|id| id.to_string());
+        }
+
+        None
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -191,18 +201,27 @@ impl NAtom {
         let data = AItem::new(id).with_kind(ItemKind::Atom);
         Self {
             inner: Rc::new(RefCell::new(InnerAtom {
-                store,
+                // store,
                 flags: 0,
                 data,
-                parent: None,
+                // parent: None,
                 content,
             })),
         }
     }
 
     #[inline]
-    pub(crate) fn size(&self) -> u32 {
+    pub(crate) fn size(&self) -> usize {
         1
+    }
+
+    pub(crate) fn depth(&self) -> usize {
+        panic!("depth is not implemented for NAtom");
+    }
+
+    #[inline]
+    pub(crate) fn field(&self, fields: &FieldMap) -> Option<String> {
+        self.borrow().field(fields)
     }
 
     #[inline]
@@ -224,10 +243,17 @@ impl Deref for NAtom {
     }
 }
 
+impl WithId for NAtom {
+    #[inline]
+    fn id(&self) -> Id {
+        self.borrow().data.id()
+    }
+}
+
 impl WithIdRange for NAtom {
     #[inline]
     fn range(&self) -> IdRange {
-        self.borrow().id().range(1)
+        self.id().range(1)
     }
 }
 

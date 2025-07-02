@@ -22,7 +22,7 @@ struct MapContent {
 
 #[derive(Debug)]
 pub(crate) struct InnerMap {
-    pub(crate) store: WeakStoreRef,  // 8
+    pub(crate) store: WeakStoreRef,  // 16
     pub(crate) flags: u8,            // 1
     pub(crate) data: AItem,          // 16
     pub(crate) parent: Option<Type>, // 16
@@ -38,7 +38,7 @@ impl Eq for NMap {}
 
 impl PartialEq for NMap {
     fn eq(&self, other: &Self) -> bool {
-        self.inner.borrow().id() == other.inner.i
+        self.borrow().id() == other.id()
     }
 }
 
@@ -139,10 +139,11 @@ impl NMap {
     //
     pub(crate) fn keys(&self) -> Vec<String> {
         let items: Vec<_> = self.children();
-        let store = self.borrow();
+        let store = self.borrow().store.upgrade().unwrap();
+        let fields = &store.borrow().fields;
         let mut keys = Vec::new();
         for t in items {
-            if let Some(field) = t.field() {
+            if let Some(field) = t.field(fields) {
                 keys.push(field.clone())
             }
         }
@@ -185,10 +186,12 @@ impl NMap {
     }
 
     pub(crate) fn to_json(&self) -> serde_json::Value {
+        let store = self.borrow().store.upgrade().unwrap();
+        let fields = &store.borrow().fields;
         let map = self.children();
         let mut content = serde_json::Map::new();
         for t in self.children().iter() {
-            content.insert(t.field().unwrap(), t.to_json());
+            content.insert(t.field(fields).unwrap(), t.to_json());
         }
 
         serde_json::Value::Object(content)
@@ -220,10 +223,13 @@ impl Serialize for NMap {
         // let map = self.borrow().as_map(self.store.clone());
         // let content = serde_json::to_value(map).unwrap_or_default();
 
+        let store = self.borrow().store.upgrade().unwrap();
+        let fields = &store.borrow().fields;
+
         let mut map = HashMap::new();
         self.children().iter().for_each(|item| {
-            let field = item.field().unwrap_or_default();
-            if (item.is_visible()) {
+            let field = item.field(fields).unwrap_or_default();
+            if item.is_visible() {
                 let value = serde_json::to_value(item).unwrap_or_default();
                 map.insert(field, value);
             } else {

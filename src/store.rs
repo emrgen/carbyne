@@ -231,10 +231,10 @@ impl DocStore {
         let entry = self.moves.entry(target_id).or_default();
         // mark the last mover as moved so that it will be treated as an invisible item
         if let Some(last) = entry.last() {
-            last.item_ref().mark_moved();
+            last.mark_moved();
         }
 
-        mover.item_ref().mark_active();
+        mover.mark_active();
         entry.push(mover);
     }
 
@@ -246,7 +246,7 @@ impl DocStore {
         self.moves.entry(target_id).and_modify(|movers| {
             movers.retain(|x| x.id() != mover_id);
             if let Some(last) = movers.last() {
-                last.item_ref().unmark_moved();
+                last.unmark_moved();
             }
         });
 
@@ -254,11 +254,11 @@ impl DocStore {
 
         if not_moved {
             self.find(&target_id).map(|target| {
-                target.item_ref().unmark_moved();
+                target.unmark_moved();
             });
         }
 
-        mover.item_ref().mark_inactive();
+        mover.mark_inactive();
     }
 
     #[inline]
@@ -327,15 +327,11 @@ impl DocStore {
         let item = item.into();
 
         if item.kind() == ItemKind::String {
-            self.id_map.insert(item.id().range(item.size()));
+            self.id_map.insert(item.id().range(item.size() as u32));
         }
 
         let id_range = item.range();
 
-        // keep the move items in a separate store for quick undo,redo
-        if item.kind() == ItemKind::Move {
-            self.movers.insert(item.clone())
-        }
         self.items.insert(item);
 
         self.state.update(id_range.client, id_range.end);
@@ -604,7 +600,7 @@ impl From<TypeStore> for ItemDataStore {
         let mut store = ItemDataStore::default();
         for (_, items) in value.items.iter() {
             for (_, item) in items.iter() {
-                store.insert(item.item_ref().borrow().data.clone());
+                store.insert(item.data().clone());
             }
         }
 
@@ -1119,7 +1115,7 @@ impl IdClockDiff for ItemStore<Type> {
     fn diff(&self, clock: ClockTick) -> Self::Target {
         let mut items = ItemStore::default();
         for (id, item) in self.map.iter() {
-            let data = item.item_ref().borrow().data.clone();
+            let data = item.data().clone();
             let ticks = data.ticks();
             // collect items that are newer than the given clock
             if id.clock > clock {

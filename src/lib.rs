@@ -69,7 +69,6 @@ mod state;
 mod store;
 mod sync;
 mod table;
-mod transaction;
 mod tx;
 mod types;
 mod undo_redo;

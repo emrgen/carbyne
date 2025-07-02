@@ -16,11 +16,11 @@ impl MarkContent {
         Self { range, data }
     }
 
-    pub(crate) fn size(&self) -> u32 {
-        self.range.size()
+    pub(crate) fn size(&self) -> usize {
+        self.range.size() as usize
     }
 
-    pub(crate) fn split(&self, offset: u32) -> (MarkContent, MarkContent) {
+    pub(crate) fn split(&self, offset: usize) -> (MarkContent, MarkContent) {
         let (ld, rd) = self.range.split(offset).unwrap();
         let left = MarkContent::new(ld, self.data.clone());
         let right = MarkContent::new(rd, self.data.clone());
@@ -186,9 +186,9 @@ pub(crate) enum Mark {
     Background(String),
     Link(String),
     Custom(String, String), // name, json
+    Id(u32),
     #[default]
     None,
-    Id(u32),
 }
 
 impl Serialize for Mark {

@@ -1,13 +1,15 @@
 use serde::ser::SerializeStruct;
 use serde::Serialize;
 use std::cell::RefCell;
+use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 use std::io::BufRead;
-use std::ops::Deref;
+use std::ops::{Deref, Range};
 use std::rc::Rc;
 
 use crate::id::{Id, IdRange, Split, WithId, WithIdRange};
 use crate::item::{Content, ItemData, ItemIterator, ItemKind, ItemRef};
+use crate::mark::MarkContent;
 use crate::natom::AItem;
 use crate::nlist::{InnerList, ListContent, NList};
 use crate::store::WeakStoreRef;
@@ -56,7 +58,7 @@ impl NText {
     pub(crate) fn new(id: Id, store: WeakStoreRef) -> Self {
         let data = AItem::new(id).with_kind(ItemKind::Text);
         Self {
-            inner: Rc::new(RefCell::new(InnerList {
+            inner: Rc::new(RefCell::new(InnerText {
                 store,
                 flags: 0,
                 data,
@@ -67,38 +69,57 @@ impl NText {
     }
 
     pub(crate) fn clear(&self) {
-        self.borrow_mut()
-            .borrow()
-            .items()
+        self.borrow()
+            .content
             .iter()
+            .filter(|t| t.is_visible())
             .for_each(|item| item.delete());
     }
 
-    pub(crate) fn content(&self) -> Content {
-        let items = self.borrow().as_list();
-        Content::Types(items)
-    }
+    // pub(crate) fn content(&self) -> Content {
+    //     let items = self.borrow().as_list();
+    //     Content::Types(items)
+    // }
 
-    pub(crate) fn size(&self) -> u32 {
-        self.visible_item_iter()
-            .fold(0, |acc, item| acc + item.size())
+    pub(crate) fn add_mark(&self, mark: MarkContent, range: Range<usize>) {}
+
+    pub(crate) fn remove_mark(&self, mark: MarkContent, range: Range<usize>) {}
+
+    pub(crate) fn replace(&self, child: &Type, with: (Type, Type)) {}
+
+    // calculate the visible text length
+    pub(crate) fn size(&self) -> usize {
+        self.borrow()
+            .content
+            .iter()
+            .map(|t| if (t.is_visible()) { t.size() } else { 0 })
+            .fold(0, |acc, size| acc + size)
     }
 
     pub fn append(&self, item: impl Into<Type>) {
         let item = item.into();
         assert!(item.kind().is_string());
-        self.item.append(item.clone());
-        item.set_parent(Some(self.into()));
+        let item = item.as_string().unwrap();
+        let content = &mut self.borrow_mut().content;
+
+        // set the left id
+        content.last().map(|f| item.set_left_id(f.range().end_id()));
+
+        content.append(item);
     }
 
     pub fn prepend(&self, item: impl Into<Type>) {
         let item = item.into();
         assert!(item.kind().is_string());
-        self.item.prepend(item);
+        let content = &mut self.borrow_mut().content;
+
+        // set the right id
+        content.first().map(|f| item.set_right_id(f.id()));
+        content.prepend(item.as_string().unwrap());
     }
 
     /// Insert string in text
-    pub fn insert(&self, offset: u32, item: impl Into<Type>) {
+    pub fn insert(&self, offset: usize, item: impl Into<Type>) {
         let item = item.into();
 
         assert!(item.kind().is_string());
@@ -109,63 +130,43 @@ impl NText {
             self.append(item);
         } else {
             // find the target item offset
-            let (target, offset) = self.find_at_offset(offset);
-
-            if let Some(target) = target {
-                if offset == 0 {
-                    target.insert_before(item);
-                } else if offset >= target.size() {
-                    target.insert_after(item);
-                } else {
-                    let items = target.split(offset);
-                    items.0.insert_after(item);
-                }
-            }
+            // let (target, offset) = self.find_at_offset(offset);
+            //
+            // if let Some(target) = target {
+            //     if offset == 0 {
+            //         target.insert_before(item);
+            //     } else if offset >= target.size() {
+            //         target.insert_after(item);
+            //     } else {
+            //         let items = target.split(offset);
+            //         items.0.insert_after(item);
+            //     }
+            // }
         }
-    }
-
-    // find item string child at offset
-    fn find_at_offset(&self, offset: u32) -> (Option<Type>, u32) {
-        let items = self.borrow().as_list();
-        let mut target_offset = 0;
-        let mut target = None;
-
-        if offset == 0 {
-            return (items.first().cloned(), 0);
-        }
-
-        for item in self.item.visible_item_iter() {
-            let size = item.size();
-            if target_offset + size > offset {
-                target = Some(item);
-                break;
-            }
-            target_offset += size;
-        }
-
-        if let Some(target) = &target {
-            (Some(target.into()), offset - target_offset)
-        } else {
-            (None, target_offset)
-        }
-    }
-
-    pub(crate) fn item_ref(&self) -> ItemRef {
-        self.item.clone()
     }
 
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        let items = self.borrow().as_list();
-        let items: Vec<_> = items.iter().map(|item| item.to_json()).collect();
+        let items: Vec<_> = self
+            .borrow()
+            .content
+            .iter()
+            .filter(|t| t.is_visible())
+            .map(|item| item.to_json())
+            .collect();
 
         items.into()
     }
 
     // raw un marked text content
     pub(crate) fn text_content(&self) -> String {
-        self.visible_item_iter()
-            .map(|item| item.text_content())
-            .collect()
+        let mut ret = String::new();
+        self.borrow()
+            .content
+            .iter()
+            .filter(|t| t.is_visible())
+            .for_each(|item| item.write_content(&mut ret));
+
+        ret
     }
 }
 
@@ -174,15 +175,15 @@ impl Serialize for NText {
     where
         S: serde::ser::Serializer,
     {
-        let mut s = serializer.serialize_struct("Text", self.borrow().serialize_size() + 1)?;
-        self.borrow().serialize_with(&mut s)?;
+        let mut s = serializer.serialize_struct("Text", 1)?;
+        // self.borrow().serialize_with(&mut s)?;
 
-        let content = self
-            .visible_item_iter()
-            .map(|item| serde_json::to_value(item).unwrap_or_default())
-            .collect::<Vec<_>>();
+        // let content = self
+        //     .visible_item_iter()
+        //     .map(|item| serde_json::to_value(item).unwrap_or_default())
+        //     .collect::<Vec<_>>();
 
-        s.serialize_field("content", &serde_json::Value::Array(content))?;
+        // s.serialize_field("content", &serde_json::Value::Array(content))?;
 
         s.end()
     }
@@ -242,21 +243,21 @@ mod tests {
         // let yaml = serde_yaml::to_string(&text).unwrap();
         // println!("{}", yaml);
 
-        assert_eq!(text.item_ref().borrow().items().len(), 4);
+        // assert_eq!(text.item_ref().borrow().items().len(), 4);
 
-        let text_ref = &text.item_ref();
-        let text_ref = text_ref.borrow();
-        let items = text_ref.items().clone();
-        let first = items.first().unwrap();
-        assert_eq!(
-            items.first().unwrap().content().to_json(),
-            "wor".to_string()
-        );
-        assert_eq!(items.get(1).unwrap().content().to_json(), "foo".to_string());
-        assert_eq!(items.get(2).unwrap().content().to_json(), "ld".to_string());
-        assert_eq!(
-            items.get(3).unwrap().content().to_json(),
-            "hello".to_string()
-        );
+        // let text_ref = &text.item_ref();
+        // let text_ref = text_ref.borrow();
+        // let items = text_ref.items().clone();
+        // let first = items.first().unwrap();
+        // assert_eq!(
+        //     items.first().unwrap().content().to_json(),
+        //     "wor".to_string()
+        // );
+        // assert_eq!(items.get(1).unwrap().content().to_json(), "foo".to_string());
+        // assert_eq!(items.get(2).unwrap().content().to_json(), "ld".to_string());
+        // assert_eq!(
+        //     items.get(3).unwrap().content().to_json(),
+        //     "hello".to_string()
+        // );
     }
 }

@@ -6,7 +6,6 @@ use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::hash::calculate_hash;
 use crate::id::{IdComp, IdRange, WithId};
 use crate::item::ItemKind;
-use crate::persist::DocStoreData;
 use crate::store::{
     ClientStore, DeleteItemStore, ItemDataStore, ItemStore, TypeStore, WeakStoreRef,
 };

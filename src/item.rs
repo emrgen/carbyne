@@ -97,44 +97,6 @@ impl ItemRef {
     //     self.borrow_mut().add_mark(mark);
     // }
 
-    pub(crate) fn append(&self, value: impl Into<Type>) {
-        let end = self.borrow().end.clone();
-        let item = value.into();
-
-        if let Some(ref end) = end {
-            item.item_ref().borrow_mut().left = Some(end.clone());
-            item.item_ref().borrow_mut().data.left_id = Some(end.end_id());
-
-            end.item_ref().borrow_mut().right = Some(item.clone());
-            self.borrow_mut().end = Some(item.clone());
-        } else {
-            self.borrow_mut().start = Some(item.clone());
-            self.borrow_mut().end = Some(item.clone());
-        }
-
-        item.item_ref().borrow_mut().data.parent_id = Some(self.id());
-        // item.item_ref().borrow_mut().parent = Some(Type::from(self.clone()));
-
-        // TODO: if item and prev are adjacent string items, merge them
-    }
-
-    pub(crate) fn prepend(&self, value: impl Into<Type>) {
-        let item = value.into();
-        let start = self.borrow().start.clone();
-        if let Some(ref start) = start {
-            start.item_ref().borrow_mut().left = Some(item.clone());
-            item.item_ref().borrow_mut().right = Some(start.clone());
-            self.borrow_mut().start = Some(item.clone());
-            item.item_ref().borrow_mut().data.right_id = Some(start.id());
-        } else {
-            self.borrow_mut().start = Some(item.clone());
-            self.borrow_mut().end = Some(item.clone());
-        }
-
-        item.item_ref().borrow_mut().data.parent_id = Some(self.id());
-        item.item_ref().borrow_mut().parent = Some(self.into());
-    }
-
     #[inline]
     pub(crate) fn left_origin(&self) -> Option<Type> {
         self.borrow().left_origin(self.store.clone())

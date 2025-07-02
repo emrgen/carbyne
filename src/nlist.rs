@@ -13,11 +13,11 @@ use crate::item::{
 };
 use crate::natom::{AItem, InnerAtom, NAtom};
 use crate::nmove::NMove;
-use crate::store::WeakStoreRef;
+use crate::store::{DocStore, WeakStoreRef};
 use crate::types::Type;
 use log::warn;
 use serde::ser::{Serialize, SerializeStruct};
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::collections::vec_deque::Iter;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
@@ -82,6 +82,22 @@ impl<T: Debug + Clone + Eq + Hash> ListContent<T> {
         None
     }
 
+    pub(crate) fn first(&self) -> Option<&T> {
+        self.get(0)
+    }
+
+    pub(crate) fn last(&self) -> Option<&T> {
+        self.get(self.size() - 1)
+    }
+
+    pub(crate) fn append(&mut self, item: T) {
+        self.insert(self.size(), item);
+    }
+
+    pub(crate) fn prepend(&mut self, item: T) {
+        self.insert(0, item);
+    }
+
     pub(crate) fn remove_item(&mut self, item: &T) {
         if let Some(index) = self.index_of(item) {
             self.remove(index);
@@ -136,10 +152,10 @@ impl<'a, V: Debug> Iterator for ListContentIter<'a, V> {
 
 #[derive(Debug)]
 pub(crate) struct InnerList {
-    pub(crate) store: WeakStoreRef,
-    pub(crate) flags: u8,
-    pub(crate) data: AItem,
-    pub(crate) parent: Option<Type>,
+    pub(crate) store: WeakStoreRef,  // 16
+    pub(crate) flags: u8,            // 1
+    pub(crate) data: AItem,          // 16
+    pub(crate) parent: Option<Type>, // 16
     pub(crate) content: ListContent<Type>,
 }
 
@@ -187,7 +203,7 @@ impl NList {
     }
 
     #[inline]
-    fn prepend(&self, item: impl Into<Type>) {
+    pub(crate) fn prepend(&self, item: impl Into<Type>) {
         let item = item.into();
         item.set_parent(Some(self.into()));
         self.inner.borrow_mut().content.insert(0, item.clone());
@@ -198,10 +214,7 @@ impl NList {
     pub fn append(&self, item: impl Into<Type>) {
         let item = item.into();
         item.set_parent(Some(self.into()));
-        self.inner
-            .borrow_mut()
-            .content
-            .insert(self.size(), item.clone());
+        self.borrow_mut().content.insert(self.size(), item.clone());
     }
 
     pub fn insert(&self, offset: usize, item: impl Into<Type>) {
@@ -213,7 +226,7 @@ impl NList {
         } else if offset >= size {
             self.append(item);
         } else {
-            self.inner.borrow_mut().content.insert(offset, item);
+            self.borrow_mut().content.insert(offset, item);
         }
     }
 
@@ -221,7 +234,7 @@ impl NList {
     fn remove(&self, key: ItemKey) {
         if let ItemKey::Number(offset) = key {
             if offset < self.size() {
-                self.inner.borrow_mut().content.remove(offset);
+                self.borrow_mut().content.remove(offset);
             }
         }
     }
@@ -229,20 +242,20 @@ impl NList {
     // remove the item front the list items
     #[inline]
     pub(crate) fn remove_child(&self, child: &Type) {
-        self.inner.borrow_mut().content.remove_item(child);
+        self.borrow_mut().content.remove_item(child);
         // child.disconnect();
     }
 
     // move the item after the target item
     pub(crate) fn move_after(&self, before: &Type, target: &Type) {
-        if let Some(index) = self.inner.borrow().content.index_of(before) {
+        if let Some(index) = self.borrow().content.index_of(before) {
             self.move_to(index + 1, target);
         }
     }
 
     // move the item before the target item
     pub(crate) fn move_before(&self, after: &Type, target: &Type) {
-        if let Some(index) = self.inner.borrow().content.index_of(after) {
+        if let Some(index) = self.borrow().content.index_of(after) {
             self.move_to(index, target);
         }
     }
@@ -254,7 +267,7 @@ impl NList {
             return;
         }
 
-        let store = &self.inner.borrow().store;
+        let store = self.borrow().store.clone();
         let id = store.upgrade().unwrap().borrow_mut().next_id();
         let mover: Type = NMove::new(id, target.clone(), store.clone()).into();
 
