@@ -3,6 +3,7 @@ use crate::delete::DeleteItem;
 use crate::id::{Id, IdRange, WithId, WithIdRange};
 use crate::inner_type::InnerType;
 use crate::item::{Content, ItemData, ItemKind, ItemKindFlags, ItemRef};
+use crate::mark::Mark;
 use crate::store::WeakStoreRef;
 use crate::Type;
 use serde::ser::SerializeStruct;
@@ -165,20 +166,37 @@ impl Debug for AItem {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ItemContent {
+    Mark(Mark),
+    String(String),
+    Null,
+    True,
+    False,
+    F32(f32),
+    F64(f64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+}
+
 #[derive(Clone)]
 pub struct AItemData {
     item: AItem,
-    data: Content,
+    data: ItemContent,
 }
 
 // Atom is a holds a fixed Content
 #[derive(Debug)]
 pub(crate) struct InnerAtom {
-    // pub(crate) store: WeakStoreRef,
-    pub(crate) flags: u8, //
-    pub(crate) data: AItem,
-    // pub(crate) parent: Option<Type>,
-    pub(crate) content: Content,
+    pub(crate) flags: u8,        // 1
+    pub(crate) data: AItem,      // 16
+    pub(crate) content: Content, // 7
 }
 
 impl InnerAtom {
@@ -201,10 +219,8 @@ impl NAtom {
         let data = AItem::new(id).with_kind(ItemKind::Atom);
         Self {
             inner: Rc::new(RefCell::new(InnerAtom {
-                // store,
                 flags: 0,
                 data,
-                // parent: None,
                 content,
             })),
         }

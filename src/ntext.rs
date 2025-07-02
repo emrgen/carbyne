@@ -8,7 +8,7 @@ use std::ops::{Deref, Range};
 use std::rc::Rc;
 
 use crate::id::{Id, IdRange, Split, WithId, WithIdRange};
-use crate::item::{Content, ItemData, ItemIterator, ItemKind, ItemRef};
+use crate::item::{Content, ItemData, ItemKind};
 use crate::mark::MarkContent;
 use crate::natom::AItem;
 use crate::nlist::{InnerList, ListContent, NList};

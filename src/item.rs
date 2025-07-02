@@ -5,7 +5,7 @@ use crate::doc::DocId;
 use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::id::{Id, IdRange, Split, WithId, WithIdRange, WithTarget};
 use crate::item::Any::U32;
-use crate::mark::MarkContent;
+use crate::mark::Mark;
 use crate::nmark::NMark;
 use crate::store::WeakStoreRef;
 use crate::types::Type;
@@ -25,372 +25,181 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Timestamp;
 
-type ItemRefInner = Rc<RefCell<Item>>;
-
-#[derive(Debug, Clone, Default)]
-pub struct ItemRef {
-    pub(crate) store: WeakStoreRef,
-    pub(crate) item: ItemRefInner,
-}
-
-impl ItemRef {
-    #[inline]
-    pub(crate) fn set_content(&self, content: Content) {
-        self.borrow_mut().content = content;
-    }
-
-    /// Get the item depth in the document tree.
-    /// as most of the nodes in a document is at shallow level this function should be very fast
-    #[inline]
-    pub(crate) fn depth(&self) -> u32 {
-        if let Some(parent) = &self.item.borrow().parent {
-            parent.depth() + 1
-        } else {
-            0
-        }
-    }
-
-    #[inline]
-    pub(crate) fn size(&self) -> u32 {
-        self.item.borrow().size()
-    }
-
-    #[inline]
-    pub(crate) fn text_content(&self) -> String {
-        match self.borrow().content {
-            Content::String(ref s) => s.clone(),
-            _ => {
-                panic!("NString has invalid content")
-            }
-        }
-    }
-}
-
-pub(crate) trait WithIndex {
-    fn index(&self) -> FractionalIndex;
-}
-
-impl WithIndex for ItemRef {
-    #[inline]
-    fn index(&self) -> FractionalIndex {
-        self.item.borrow().index.clone()
-    }
-}
-
-impl ItemRef {
-    pub(crate) fn new(item: ItemRefInner, store: WeakStoreRef) -> Self {
-        Self { item, store }
-    }
-
-    #[inline]
-    pub(crate) fn kind(&self) -> ItemKind {
-        self.item.borrow().kind.clone()
-    }
-
-    #[inline]
-    pub(crate) fn field(&self) -> Option<String> {
-        self.item.borrow().field(&self.store)
-    }
-
-    // #[inline]
-    // pub(crate) fn add_mark(&self, mark: NMark) {
-    //     self.borrow_mut().add_mark(mark);
-    // }
-
-    #[inline]
-    pub(crate) fn left_origin(&self) -> Option<Type> {
-        self.borrow().left_origin(self.store.clone())
-    }
-
-    #[inline]
-    pub(crate) fn mark_moved(&self) {
-        self.borrow_mut().mark_moved();
-    }
-
-    #[inline]
-    pub(crate) fn unmark_moved(&self) {
-        self.borrow_mut().unmark_moved();
-    }
-
-    #[inline]
-    pub(crate) fn mark_inactive(&self) {
-        self.borrow_mut().mark_inactive();
-    }
-
-    #[inline]
-    pub(crate) fn mark_active(&self) {
-        self.borrow_mut().mark_active();
-    }
-
-    #[inline]
-    pub(crate) fn is_inactive(&self) -> bool {
-        self.borrow().is_inactive()
-    }
-
-    #[inline]
-    pub(crate) fn is_moved(&self) -> bool {
-        self.borrow().is_moved()
-    }
-
-    #[inline]
-    pub(crate) fn is_deleted(&self) -> bool {
-        self.borrow().is_deleted()
-    }
-
-    pub(crate) fn delete(&self, size: u32) {
-        let store = self.store.upgrade().unwrap();
-        let id = store.borrow_mut().next_id();
-        let item = DeleteItem::new(id, self.id().range(size));
-        store.borrow_mut().insert_delete(item);
-        self.borrow_mut().make_deleted();
-    }
-}
-
-impl ItemRef {
-    pub(crate) fn serialize_with<S>(&self, s: &mut S) -> Result<(), S::Error>
-    where
-        S: serde::ser::SerializeStruct,
-    {
-        s.serialize_field("id", &self.id().to_string())?;
-        s.serialize_field("kind", &self.kind().to_string())?;
-        let data = &self.borrow().data;
-
-        if let Some(parent) = &data.parent_id {
-            s.serialize_field("parent_id", &parent.id().to_string())?;
-        }
-
-        if let Some(left) = &data.left_id {
-            s.serialize_field("left_id", &left.id().to_string())?;
-        }
-
-        if let Some(right) = &data.right_id {
-            s.serialize_field("right_id", &right.id().to_string())?;
-        }
-
-        // let marks_map = self.borrow().get_marks();
-        // let mut map = serde_json::Map::new();
-        // for mark in marks_map.iter() {
-        //     if let Content::Mark(mark) = mark.content() {
-        //         let (k, v) = mark.get_key_value();
-        //         map.insert(k, v);
-        //     }
-        // }
-        // if !map.is_empty() {
-        //     let marks = serde_json::to_value(map).unwrap_or_default();
-        //     s.serialize_field("marks", &marks)?;
-        // }
-
-        Ok(())
-    }
-}
-
-impl Linked for ItemRef {
-    #[inline]
-    fn left(&self) -> Option<ItemRef> {
-        self.borrow().left.as_ref().map(|l| l.item_ref().clone())
-    }
-
-    #[inline]
-    fn right(&self) -> Option<ItemRef> {
-        self.borrow().right.as_ref().map(|r| r.item_ref().clone())
-    }
-
-    #[inline]
-    fn is_visible(&self) -> bool {
-        !self.borrow().is_deleted() && !self.borrow().is_moved()
-    }
-
-    fn disconnect(&mut self) {
-        if let Some(left) = self.left() {
-            left.borrow_mut().right = self.right().map(|r| r.into());
-        }
-
-        if let Some(right) = self.right() {
-            right.borrow_mut().left = self.left().map(|r| r.into());
-        }
-    }
-}
-
-pub(crate) trait StartEnd
-where
-    Self: Sized,
-{
-    fn start(&self) -> Option<Self>;
-    fn end(&self) -> Option<Self>;
-}
-
-pub(crate) trait Linked: StartEnd
-where
-    Self: Sized,
-{
-    fn left(&self) -> Option<Self>;
-    fn right(&self) -> Option<Self>;
-
-    fn is_visible(&self) -> bool;
-    fn disconnect(&mut self) {}
-}
-
-impl StartEnd for ItemRef {
-    #[inline]
-    fn start(&self) -> Option<Self> {
-        self.borrow().start.as_ref().map(|s| s.item_ref().clone())
-    }
-
-    #[inline]
-    fn end(&self) -> Option<Self> {
-        self.borrow().end.as_ref().map(|e| e.item_ref().clone())
-    }
-}
-
-pub(crate) trait ItemIterator: Linked + StartEnd
-where
-    Self: Sized,
-{
-    #[inline]
-    fn item_iter(&self) -> ItemIter<Self> {
-        ItemIter { item: self.start() }
-    }
-
-    #[inline]
-    fn visible_item_iter(&self) -> VisibleItemIter<Self> {
-        VisibleItemIter { item: self.start() }
-    }
-}
-
-impl<T: Linked + StartEnd> ItemIterator for T {}
-
-pub(crate) struct ItemIter<T: Linked> {
-    pub(crate) item: Option<T>,
-}
-
-pub(crate) struct VisibleItemIter<T: Linked> {
-    pub(crate) item: Option<T>,
-}
-
-impl<T: Clone + StartEnd + Linked + WithId> Iterator for ItemIter<T> {
-    type Item = T;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let item = self.item.clone();
-        self.item = item.as_ref().and_then(|i| i.right());
-
-        item
-    }
-}
-
-impl<T: Clone + StartEnd + Linked> Iterator for VisibleItemIter<T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut item = self.item.clone();
-        // move to right and return the first visible item
-        while let Some(i) = item {
-            // skip invisible items while moving to the right
-            if i.is_visible() {
-                self.item = i.right();
-                return Some(i);
-            }
-
-            item = i.right();
-        }
-
-        None
-    }
-}
-
-impl Deref for ItemRef {
-    type Target = ItemRefInner;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.item
-    }
-}
-
-impl Serialize for ItemRef {
-    #[inline]
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        Type::from(self.clone()).serialize(serializer)
-    }
-}
-
-impl Encode for ItemRef {
-    #[inline]
-    fn encode<E: Encoder>(&self, e: &mut E, ctx: &mut EncodeContext) {
-        self.borrow().data.encode(e, ctx);
-    }
-}
-
-impl Decode for ItemRef {
-    #[inline]
-    fn decode<D: Decoder>(d: &mut D, _ctx: &DecodeContext) -> Result<Self, String> {
-        Err("ItemRef::decode not implemented".to_string())
-    }
-}
-
-impl WithId for ItemRef {
-    #[inline]
-    fn id(&self) -> Id {
-        self.borrow().data.id
-    }
-}
-
-impl WithTarget for ItemRef {
-    #[inline]
-    fn set_target(&self, target: Type) {
-        self.borrow_mut().target = Some(target);
-    }
-
-    #[inline]
-    fn get_target(&self) -> Option<Type> {
-        self.borrow().target.clone()
-    }
-}
-
-impl Eq for ItemRef {}
-
-impl PartialEq<Self> for ItemRef {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.item
-            .borrow()
-            .id
-            .compare_without_client(&other.item.borrow().id)
-            == Ordering::Equal
-    }
-}
-
-impl PartialOrd<Self> for ItemRef {
-    #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for ItemRef {
-    #[inline]
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.item.borrow().data.id.cmp(&other.item.borrow().data.id)
-    }
-}
+// #[derive(Debug, Clone, Default)]
+// pub struct ItemRef {
+//     pub(crate) store: WeakStoreRef,
+//     pub(crate) item: Item,
+// }
+//
+// impl ItemRef {
+//     #[inline]
+//     pub(crate) fn set_content(&self, content: Content) {
+//         self.borrow_mut().content = content;
+//     }
+//
+//     /// Get the item depth in the document tree.
+//     /// as most of the nodes in a document is at shallow level this function should be very fast
+//     #[inline]
+//     pub(crate) fn depth(&self) -> usize {
+//         if let Some(parent) = &self.item.borrow().parent {
+//             parent.depth() + 1
+//         } else {
+//             0
+//         }
+//     }
+//
+//     #[inline]
+//     pub(crate) fn size(&self) -> u32 {
+//         self.item.borrow().size()
+//     }
+//
+//     #[inline]
+//     pub(crate) fn text_content(&self) -> String {
+//         match self.borrow().content {
+//             Content::String(ref s) => s.clone(),
+//             _ => {
+//                 panic!("NString has invalid content")
+//             }
+//         }
+//     }
+// }
+//
+// pub(crate) trait WithIndex {
+//     fn index(&self) -> FractionalIndex;
+// }
+//
+// impl WithIndex for ItemRef {
+//     #[inline]
+//     fn index(&self) -> FractionalIndex {
+//         self.item.borrow().index.clone()
+//     }
+// }
+//
+// impl ItemRef {
+//     pub(crate) fn new(item: ItemRefInner, store: WeakStoreRef) -> Self {
+//         Self { item, store }
+//     }
+//
+//     #[inline]
+//     pub(crate) fn kind(&self) -> ItemKind {
+//         self.item.borrow().kind.clone()
+//     }
+//
+//     #[inline]
+//     pub(crate) fn field(&self) -> Option<String> {
+//         self.item.borrow().field(&self.store)
+//     }
+//
+//     // #[inline]
+//     // pub(crate) fn add_mark(&self, mark: NMark) {
+//     //     self.borrow_mut().add_mark(mark);
+//     // }
+//
+//     #[inline]
+//     pub(crate) fn left_origin(&self) -> Option<Type> {
+//         self.borrow().left_origin(self.store.clone())
+//     }
+//
+//     #[inline]
+//     pub(crate) fn mark_moved(&self) {
+//         self.borrow_mut().mark_moved();
+//     }
+//
+//     #[inline]
+//     pub(crate) fn unmark_moved(&self) {
+//         self.borrow_mut().unmark_moved();
+//     }
+//
+//     #[inline]
+//     pub(crate) fn mark_inactive(&self) {
+//         self.borrow_mut().mark_inactive();
+//     }
+//
+//     #[inline]
+//     pub(crate) fn mark_active(&self) {
+//         self.borrow_mut().mark_active();
+//     }
+//
+//     #[inline]
+//     pub(crate) fn is_inactive(&self) -> bool {
+//         self.borrow().is_inactive()
+//     }
+//
+//     #[inline]
+//     pub(crate) fn is_moved(&self) -> bool {
+//         self.borrow().is_moved()
+//     }
+//
+//     #[inline]
+//     pub(crate) fn is_deleted(&self) -> bool {
+//         self.borrow().is_deleted()
+//     }
+//
+//     pub(crate) fn delete(&self, size: u32) {
+//         let store = self.store.upgrade().unwrap();
+//         let id = store.borrow_mut().next_id();
+//         let item = DeleteItem::new(id, self.id().range(size));
+//         store.borrow_mut().insert_delete(item);
+//         self.borrow_mut().make_deleted();
+//     }
+// }
+//
+// impl ItemRef {
+//     pub(crate) fn serialize_with<S>(&self, s: &mut S) -> Result<(), S::Error>
+//     where
+//         S: serde::ser::SerializeStruct,
+//     {
+//         s.serialize_field("id", &self.id().to_string())?;
+//         s.serialize_field("kind", &self.kind().to_string())?;
+//         let data = &self.borrow().data;
+//
+//         if let Some(parent) = &data.parent_id {
+//             s.serialize_field("parent_id", &parent.id().to_string())?;
+//         }
+//
+//         if let Some(left) = &data.left_id {
+//             s.serialize_field("left_id", &left.id().to_string())?;
+//         }
+//
+//         if let Some(right) = &data.right_id {
+//             s.serialize_field("right_id", &right.id().to_string())?;
+//         }
+//
+//         // let marks_map = self.borrow().get_marks();
+//         // let mut map = serde_json::Map::new();
+//         // for mark in marks_map.iter() {
+//         //     if let Content::Mark(mark) = mark.content() {
+//         //         let (k, v) = mark.get_key_value();
+//         //         map.insert(k, v);
+//         //     }
+//         // }
+//         // if !map.is_empty() {
+//         //     let marks = serde_json::to_value(map).unwrap_or_default();
+//         //     s.serialize_field("marks", &marks)?;
+//         // }
+//
+//         Ok(())
+//     }
+// }
+//
+// impl Encode for ItemRef {
+//     #[inline]
+//     fn encode<E: Encoder>(&self, e: &mut E, ctx: &mut EncodeContext) {}
+// }
+//
+// impl Decode for ItemRef {
+//     #[inline]
+//     fn decode<D: Decoder>(d: &mut D, _ctx: &DecodeContext) -> Result<Self, String> {
+//         Err("ItemRef::decode not implemented".to_string())
+//     }
+// }
 
 #[derive(Debug, Clone, Default)]
 pub struct Item {
+    pub(crate) store: WeakStoreRef,
     pub(crate) flags: u8,
-    pub(crate) data: ItemData,       // data for the item
     pub(crate) parent: Option<Type>, // parent link
-    pub(crate) target: Option<Type>, // target link
-    pub(crate) left: Option<Type>,   // left link
-    pub(crate) right: Option<Type>,  // right link
-    pub(crate) start: Option<Type>,  // linked children start
-    pub(crate) end: Option<Type>,    // linked children end
-    // pub(crate) marks: Option<Type>,   // linked marks
-    // TODO: move the index to list to avoid per item allocation
-    pub(crate) index: FractionalIndex, // runtime index for quick index lookup in a large list,
+    pub(crate) data: ItemData,       // data for the item
 }
 
 impl PartialEq<Content> for &Content {
@@ -717,68 +526,6 @@ impl DerefMut for Item {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(crate) enum ItemSide {
-    #[default]
-    None,
-    Left,
-    Right,
-}
-
-bitflags! {
-    pub(crate) struct ItemSideFlags: u8 {
-        const NONE = 0x00;
-        const LEFT = 0x01;
-        const RIGHT = 0x02;
-    }
-}
-
-impl ItemSide {
-    pub(crate) fn is_left(&self) -> bool {
-        matches!(self, ItemSide::Left)
-    }
-
-    pub(crate) fn is_right(&self) -> bool {
-        matches!(self, ItemSide::Right)
-    }
-
-    pub(crate) fn is_none(&self) -> bool {
-        matches!(self, ItemSide::None)
-    }
-}
-
-impl From<ItemSide> for ItemSideFlags {
-    fn from(kind: ItemSide) -> Self {
-        match kind {
-            ItemSide::None => ItemSideFlags::NONE,
-            ItemSide::Left => ItemSideFlags::LEFT,
-            ItemSide::Right => ItemSideFlags::RIGHT,
-        }
-    }
-}
-
-impl From<&ItemSide> for ItemSideFlags {
-    fn from(kind: &ItemSide) -> Self {
-        match kind {
-            ItemSide::None => ItemSideFlags::NONE,
-            ItemSide::Left => ItemSideFlags::LEFT,
-            ItemSide::Right => ItemSideFlags::RIGHT,
-        }
-    }
-}
-
-impl From<ItemSideFlags> for ItemSide {
-    fn from(flags: ItemSideFlags) -> Self {
-        let flag = flags.bits();
-        match flag {
-            0 => ItemSide::None,
-            1 => ItemSide::Left,
-            2 => ItemSide::Right,
-            _ => panic!("Invalid item side flag: {}", flag),
-        }
-    }
-}
-
 // item data is encoded and saved into persistent storage
 #[derive(Debug, Clone, Default, Eq)]
 pub struct ItemData {
@@ -1010,12 +757,6 @@ impl From<ItemData> for Item {
     }
 }
 
-impl From<ItemData> for ItemRefInner {
-    fn from(data: ItemData) -> Self {
-        Rc::new(RefCell::new(Item::new(data)))
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ContainerKind {
     Map,
@@ -1200,7 +941,7 @@ pub enum Content {
     Doc(DocProps),
     Id(Id),           // id of the item
     Types(Vec<Type>), // list of types, backbone for crdt types
-    Mark(MarkContent),
+    Mark(Mark),
     Binary(Vec<u8>),
     String(String),
     Embed(Any),
@@ -1330,12 +1071,6 @@ impl Decode for Content {
 impl Default for Content {
     fn default() -> Self {
         Self::Null
-    }
-}
-
-impl From<MarkContent> for Content {
-    fn from(m: MarkContent) -> Self {
-        Self::Mark(m)
     }
 }
 

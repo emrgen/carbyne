@@ -1,10 +1,8 @@
 use crate::bimapid::FieldId;
 use crate::id::{Id, IdRange, WithId, WithIdRange};
-use crate::item::{Content, ItemData, ItemIterator, ItemKey, ItemKind, ItemRef, Linked, StartEnd};
-use crate::mark::{Mark, MarkContent};
+use crate::item::{Content, ItemKey, ItemKind};
+use crate::mark::Mark;
 use crate::natom::AItem;
-use crate::nlist::{InnerList, ListContent, NList};
-use crate::nmark::NMark;
 use crate::store::WeakStoreRef;
 use crate::types::Type;
 use hashbrown::HashMap;
@@ -247,7 +245,6 @@ impl Serialize for NMap {
 #[cfg(test)]
 mod tests {
     use crate::doc::Doc;
-    use crate::print_yaml;
     use serde_json::json;
 
     #[test]

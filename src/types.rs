@@ -5,9 +5,9 @@ use crate::doc::{Doc, DocMeta};
 use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::id::{Id, IdRange, Split, WithId, WithIdRange, WithTarget};
 use crate::inner_type::InnerFlag;
-use crate::item::{Content, ItemData, ItemKey, ItemKind, ItemRef, Linked, StartEnd, WithIndex};
+use crate::item::{Content, ItemData, ItemKey, ItemKind, ItemRef, WithIndex};
 use crate::mark::Mark;
-use crate::natom::NAtom;
+use crate::natom::{AItemData, NAtom};
 use crate::nlist::NList;
 use crate::nmap::NMap;
 use crate::nmark::NMark;
@@ -118,7 +118,7 @@ impl Type {
         }
     }
 
-    pub(crate) fn data(&self) -> ItemData {
+    pub(crate) fn data(&self) -> AItemData {
         match self {
             // Type::List(n) => n.data(),
             // Type::Map(n) => n.data(),
@@ -142,6 +142,90 @@ impl Type {
     //         _ => panic!("set_left_id: not implemented"),
     //     }
     // }
+
+    #[inline]
+    pub(crate) fn mark_deleted(&self) {
+        match self {
+            Type::List(n) => n.mark_deleted(),
+            Type::Map(n) => n.mark_deleted(),
+            Type::Text(n) => n.mark_deleted(),
+            Type::String(n) => n.mark_deleted(),
+            Type::Atom(n) => n.mark_deleted(),
+            Type::Move(n) => n.mark_deleted(),
+            Type::String(n) => n.mark_deleted(),
+            _ => panic!("mark_deleted: not implemented"),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn unmark_deleted(&self) {
+        match self {
+            Type::List(n) => n.unmark_deleted(),
+            Type::Map(n) => n.unmark_deleted(),
+            Type::Text(n) => n.unmark_deleted(),
+            Type::String(n) => n.unmark_deleted(),
+            Type::Atom(n) => n.unmark_deleted(),
+            Type::Move(n) => n.unmark_deleted(),
+            Type::String(n) => n.unmark_deleted(),
+            _ => panic!("unmark_deleted: not implemented"),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn mark_moved(&self) {
+        match self {
+            Type::List(n) => n.mark_moved(),
+            Type::Map(n) => n.mark_moved(),
+            Type::Text(n) => n.mark_moved(),
+            Type::String(n) => n.mark_moved(),
+            Type::Atom(n) => n.mark_moved(),
+            Type::Move(n) => n.mark_moved(),
+            Type::String(n) => n.mark_moved(),
+            _ => panic!("mark_moved: not implemented"),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn unmark_moved(&self) {
+        match self {
+            Type::List(n) => n.unmark_moved(),
+            Type::Map(n) => n.unmark_moved(),
+            Type::Text(n) => n.unmark_moved(),
+            Type::String(n) => n.unmark_moved(),
+            Type::Atom(n) => n.unmark_moved(),
+            Type::Move(n) => n.unmark_moved(),
+            Type::String(n) => n.unmark_moved(),
+            _ => panic!("unmark_moved: not implemented"),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn mark_active(&self) {
+        match self {
+            Type::List(n) => n.mark_active(),
+            Type::Map(n) => n.mark_active(),
+            Type::Text(n) => n.mark_active(),
+            Type::String(n) => n.mark_active(),
+            Type::Atom(n) => n.mark_active(),
+            Type::Move(n) => n.mark_active(),
+            Type::String(n) => n.mark_active(),
+            _ => panic!("mark_active: not implemented"),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn unmark_active(&self) {
+        match self {
+            Type::List(n) => n.unmark_active(),
+            Type::Map(n) => n.unmark_active(),
+            Type::Text(n) => n.unmark_active(),
+            Type::String(n) => n.unmark_active(),
+            Type::Atom(n) => n.unmark_active(),
+            Type::Move(n) => n.unmark_active(),
+            Type::String(n) => n.unmark_active(),
+            _ => panic!("mark_inactive: not implemented"),
+        }
+    }
 
     #[inline]
     pub(crate) fn depth(&self) -> usize {

@@ -1,5 +1,5 @@
 use crate::id::{Id, IdRange, WithId, WithIdRange, WithTarget};
-use crate::item::{Content, ItemData, ItemIterator, ItemKey, ItemKind, ItemRef};
+use crate::item::{Content, ItemData, ItemKey, ItemKind};
 use crate::natom::AItem;
 use crate::nlist::{ListContent, NList};
 use crate::nmark::NMark;
@@ -60,14 +60,14 @@ impl NMove {
         self.borrow().parent.as_ref().map_or(0, |t| t.depth() + 1)
     }
 
-    #[inline]
-    pub(crate) fn content(&self) -> Content {
-        if let Some(target) = self.get_target().as_ref() {
-            target.content()
-        } else {
-            Content::Null
-        }
-    }
+    // #[inline]
+    // pub(crate) fn content(&self) -> Content {
+    // if let Some(target) = self.get_target().as_ref() {
+    //     target.content()
+    // } else {
+    //     Content::Null
+    // }
+    // }
 
     #[inline]
     pub(crate) fn size(&self) -> usize {

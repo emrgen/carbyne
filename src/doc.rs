@@ -25,7 +25,6 @@ use crate::nstring::NString;
 use crate::ntext::NText;
 use crate::state::ClientState;
 use crate::store::{DocStore, StoreRef};
-use crate::tx::Tx;
 use crate::types::Type;
 use crate::{print_yaml, Client, ClockTick};
 
@@ -266,8 +265,8 @@ impl Doc {
 
         {
             // TODO: for now we just apply the changes using a transaction, the changes are not used yet
-            let mut tx = Tx::new(Rc::downgrade(&self.store.clone()), diff);
-            tx.commit();
+            // let mut tx = Tx::new(Rc::downgrade(&self.store.clone()), diff);
+            // tx.commit();
         }
     }
 

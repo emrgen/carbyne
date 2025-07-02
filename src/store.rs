@@ -1087,27 +1087,27 @@ pub(crate) trait IdClockDiff {
     fn diff(&self, clock: ClockTick) -> Self::Target;
 }
 
-impl IdClockDiff for ItemStore<ItemRef> {
-    type Target = ItemStore<ItemData>;
-
-    fn diff(&self, clock: ClockTick) -> Self::Target {
-        let mut items = ItemStore::default();
-        for (id, item) in self.map.iter() {
-            let data = item.borrow().data.clone();
-            let ticks = data.ticks();
-            // collect items that are newer than the given clock
-            if id.clock > clock {
-                items.insert(data);
-            } else if id.clock < clock && clock < id.clock + ticks {
-                if let Ok((_, r)) = data.split(clock) {
-                    items.insert(r);
-                }
-            }
-        }
-
-        items
-    }
-}
+// impl IdClockDiff for ItemStore<ItemRef> {
+//     type Target = ItemStore<ItemData>;
+//
+//     fn diff(&self, clock: ClockTick) -> Self::Target {
+//         let mut items = ItemStore::default();
+//         for (id, item) in self.map.iter() {
+//             let data = item.borrow().data.clone();
+//             let ticks = data.ticks();
+//             // collect items that are newer than the given clock
+//             if id.clock > clock {
+//                 items.insert(data);
+//             } else if id.clock < clock && clock < id.clock + ticks {
+//                 if let Ok((_, r)) = data.split(clock) {
+//                     items.insert(r);
+//                 }
+//             }
+//         }
+//
+//         items
+//     }
+// }
 
 impl IdClockDiff for ItemStore<Type> {
     type Target = ItemStore<ItemData>;

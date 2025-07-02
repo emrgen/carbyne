@@ -7,10 +7,7 @@ use crate::index::{BTreeIndex, IBTree, ItemIndexMap};
 use crate::index_tree;
 use crate::index_tree::{IndexTree, ValueIter};
 use crate::inner_type::InnerType;
-use crate::item::{
-    ContainerKind, Content, ItemData, ItemIterator, ItemKey, ItemKind, ItemRef, Linked, StartEnd,
-    WithIndex,
-};
+use crate::item::{Content, ItemData, ItemKey, ItemKind};
 use crate::natom::{AItem, InnerAtom, NAtom};
 use crate::nmove::NMove;
 use crate::store::{DocStore, WeakStoreRef};

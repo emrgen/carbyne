@@ -15,12 +15,6 @@ use crate::store::WeakStoreRef;
 use crate::types::Type;
 use crate::NString;
 
-// hex color
-#[derive(Debug)]
-struct Color {
-    rgba: [u8; 4],
-}
-
 #[derive(Debug)]
 enum MarkContent {
     Bold,
@@ -29,8 +23,9 @@ enum MarkContent {
     Strike,
     Subscript,
     Superscript,
-    Color(Color),
-    Background(Color),
+    Color(u16),
+    Background(u16),
+    Custom(u16),
 }
 
 #[derive(Debug)] // 24
@@ -138,7 +133,7 @@ mod tests {
 
         doc.add_mark(Mark::Bold);
         doc.add_mark(Mark::Italic);
-        doc.add_mark(Mark::Color("red".into()));
+        // doc.add_mark(Mark::Color("red".into()));
 
         let yaml = serde_yaml::to_string(&doc).unwrap();
         println!("{}", yaml);

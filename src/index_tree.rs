@@ -1,7 +1,6 @@
 // keep the changes in sorted order for the document
 
 use crate::index_map::{IndexMap, IndexMapper, IndexRef};
-use crate::tx::TxOp::Insert;
 use crate::Id;
 use ptree::{print_tree, TreeBuilder};
 use std::collections::{HashMap, HashSet};

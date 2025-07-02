@@ -10,7 +10,7 @@ pub(crate) fn creates_cycle(parent: &Type, child: &Type) -> bool {
 
     let child_id = child.id();
     // if the child is already a parent of the parent, it will create a cycle
-    while let Some(parent) = parent.parent() {
+    while let Some(parent) = parent.get_parent() {
         if parent.id().eq(&child_id) {
             return true;
         }
