@@ -131,7 +131,16 @@ impl Type {
     }
 
     pub(crate) fn data(&self) -> ItemData {
-        self.item_ref().borrow().data.clone()
+        match self {
+            Type::List(n) => n.data(),
+            Type::Map(n) => n.size(),
+            Type::Text(n) => n.size(),
+            Type::String(n) => n.size(),
+            Type::Atom(n) => n.size(),
+            Type::Move(n) => n.size(),
+            Type::Mark(n) => n.size(),
+            _ => panic!("size: not implemented"),
+        }
     }
 
     #[inline]

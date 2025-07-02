@@ -3,10 +3,12 @@ use crate::delete::DeleteItem;
 use crate::natom::{AItem, InnerAtom, NAtom};
 use crate::nlist::{InnerList, NList};
 use crate::nmap::{InnerMap, NMap};
+use crate::nstring::InnerString;
+use crate::ntext::InnerText;
 use crate::store::WeakStoreRef;
-use crate::Id;
-use crate::Type;
 use crate::WithId;
+use crate::{Id, NString};
+use crate::{NText, Type};
 use std::cell::RefCell;
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -96,7 +98,7 @@ macro_rules! impl_inner_type_inner_many {
     };
 }
 
-impl_inner_type_inner_many!(InnerList, InnerMap, InnerAtom);
+impl_inner_type_inner_many!(InnerList, InnerMap, InnerText, InnerAtom);
 
 macro_rules! impl_inner_type {
     ($t:ty) => {
@@ -189,4 +191,4 @@ macro_rules! impl_inner_type_many {
     };
 }
 
-impl_inner_type_many!(NList, NMap, NAtom);
+impl_inner_type_many!(NList, NMap, NText, NAtom);

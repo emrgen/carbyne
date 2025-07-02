@@ -22,16 +22,24 @@ struct MapContent {
 
 #[derive(Debug)]
 pub(crate) struct InnerMap {
-    pub(crate) store: WeakStoreRef,
-    pub(crate) flags: u8,
-    pub(crate) data: AItem,
-    pub(crate) parent: Option<Type>,
-    content: MapContent,
+    pub(crate) store: WeakStoreRef,  // 8
+    pub(crate) flags: u8,            // 1
+    pub(crate) data: AItem,          // 16
+    pub(crate) parent: Option<Type>, // 16
+    content: MapContent,             // 16
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct NMap {
     inner: Rc<RefCell<InnerMap>>,
+}
+
+impl Eq for NMap {}
+
+impl PartialEq for NMap {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner.borrow().id() == other.inner.i
+    }
 }
 
 impl NMap {

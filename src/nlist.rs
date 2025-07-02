@@ -26,19 +26,19 @@ use std::rc::Rc;
 
 // expose a vec like api for get, insert, remove, index_of
 #[derive(Debug)]
-pub(crate) enum ListContent {
-    Small(Vec<Type>),
-    Large(IndexTree<Type>),
+pub(crate) enum ListContent<T: Debug + Clone + Eq + Hash> {
+    Small(Vec<T>),
+    Large(IndexTree<T>),
 }
 
-impl Default for ListContent {
+impl<T: Debug + Clone + Eq + Hash> Default for ListContent<T> {
     fn default() -> Self {
         ListContent::Small(Vec::new())
     }
 }
 
-impl ListContent {
-    fn get(&self, index: usize) -> Option<&Type> {
+impl<T: Debug + Clone + Eq + Hash> ListContent<T> {
+    fn get(&self, index: usize) -> Option<&T> {
         match self {
             ListContent::Small(v) => v.get(index),
             ListContent::Large(v) => v.at_index(index),
@@ -53,8 +53,9 @@ impl ListContent {
     }
 
     // auto upgrade to index tree when item count reach above a threshold
-    fn insert(&mut self, index: usize, item: Type) {
-        if self.is_small() && self.size() == 10 {
+    fn insert(&mut self, index: usize, item: T) {
+        // the small container size limit is a runtime config
+        if self.is_small() && self.size() == 16 {
             let mut tree = IndexTree::new();
             match self {
                 ListContent::Small(v) => v.drain(0..).enumerate().for_each(|(i, t)| {
@@ -77,17 +78,17 @@ impl ListContent {
     }
 
     // auto downgrade to vec when item count reach below a threshold
-    pub(crate) fn remove(&self, index: usize) -> Option<&Type> {
+    pub(crate) fn remove(&self, index: usize) -> Option<&T> {
         None
     }
 
-    pub(crate) fn remove_item(&mut self, item: &Type) {
+    pub(crate) fn remove_item(&mut self, item: &T) {
         if let Some(index) = self.index_of(item) {
             self.remove(index);
         }
     }
 
-    fn index_of(&self, item: &Type) -> Option<usize> {
+    fn index_of(&self, item: &T) -> Option<usize> {
         match self {
             ListContent::Small(v) => v.iter().position(|r| r == item),
             ListContent::Large(v) => v.index_of(item),
@@ -101,7 +102,7 @@ impl ListContent {
         }
     }
 
-    fn contains(&self, item: &Type) -> bool {
+    fn contains(&self, item: &T) -> bool {
         match self {
             ListContent::Small(v) => v.iter().position(|r| r == item).map_or(false, |v| true),
             ListContent::Large(v) => v.contains(item),
@@ -109,7 +110,7 @@ impl ListContent {
     }
 
     // iterate over all list items
-    pub(crate) fn iter(&self) -> ListContentIter<'_, Type> {
+    pub(crate) fn iter(&self) -> ListContentIter<'_, T> {
         match self {
             ListContent::Small(v) => ListContentIter::Small(v.iter()),
             ListContent::Large(v) => ListContentIter::Large(v.iter_from(0).unwrap()),
@@ -139,7 +140,7 @@ pub(crate) struct InnerList {
     pub(crate) flags: u8,
     pub(crate) data: AItem,
     pub(crate) parent: Option<Type>,
-    content: ListContent,
+    pub(crate) content: ListContent<Type>,
 }
 
 #[derive(Clone, Debug)]

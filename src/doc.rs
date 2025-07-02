@@ -44,29 +44,29 @@ pub struct Doc {
 
 impl Doc {
     /// Create a new document with the given options.
-    pub fn new(opts: DocMeta) -> Self {
+    pub fn new(meta: DocMeta) -> Self {
         let mut store = DocStore::default();
 
-        store.doc_id = opts.id.clone();
-        store.created_by = opts.crated_by.clone();
+        store.doc_id = meta.id.clone();
+        store.created_by = meta.created_by.clone();
 
         // doc is always created by the client with clock 0,
         // so we need to increment the clock for next client items
-        store.update_client(&opts.crated_by, 1);
+        store.update_client(&meta.created_by, 1);
 
-        let client = store.get_client(&opts.crated_by);
+        let client = store.get_client(&meta.created_by);
         let root_id = store.next_id();
 
         let store_ref = Rc::new(RefCell::new(store));
         let weak = Rc::downgrade(&store_ref);
         let root = NMap::new(root_id, weak);
 
-        root.set_content(DocProps::new(opts.id.clone(), opts.crated_by.clone()));
+        // root.set_content(DocProps::new(opts.id.clone(), opts.crated_by.clone()));
 
         store_ref.borrow_mut().insert(root.clone());
 
         let mut doc = Self {
-            meta: opts,
+            meta,
             store: store_ref,
             root,
         };
@@ -88,7 +88,7 @@ impl Doc {
                 let doc = Doc::new(DocMeta {
                     id: content.id.clone(),
                     created_at: content.created_at,
-                    crated_by: content.created_by.clone().into(),
+                    created_by: content.created_by.clone().into(),
                     props: content.props.clone().into_kv_map(),
                 });
 
@@ -119,7 +119,7 @@ impl Doc {
     pub fn diff(&self, state: impl Into<ClientState>) -> Diff {
         let mut diff = self.store.borrow().diff(
             self.meta.id.clone(),
-            self.meta.crated_by.clone(),
+            self.meta.created_by.clone(),
             state.into(),
         );
         diff.optimize();
@@ -358,7 +358,7 @@ impl Doc {
     }
 
     #[inline]
-    fn size(&self) -> u32 {
+    fn size(&self) -> usize {
         self.root.size()
     }
 
@@ -400,7 +400,7 @@ impl Doc {
         );
         map.insert(
             "created_by".to_string(),
-            serde_json::Value::String(self.meta.crated_by.to_string()),
+            serde_json::Value::String(self.meta.created_by.to_string()),
         );
         map.insert(
             "created_at".to_string(),
@@ -456,11 +456,11 @@ impl serde::Serialize for Doc {
     {
         let mut size = 2;
         let root = self.root.clone();
-        size += root.borrow().serialize_size();
+        // size += root.borrow().serialize_size();
 
         let mut s = serializer.serialize_struct("Doc", size + 1)?;
         s.serialize_field("doc_id", &self.meta.id)?;
-        s.serialize_field("created_by", &self.meta.crated_by)?;
+        s.serialize_field("created_by", &self.meta.created_by)?;
         s.serialize_field("created_at", &self.meta.created_at)?;
         s.serialize_field("root", &root)?;
 
@@ -494,7 +494,7 @@ impl CloneDeep for Doc {
 pub struct DocMeta {
     pub id: DocId,
     pub created_at: u64,
-    pub crated_by: Client,
+    pub created_by: Client,
     pub props: HashMap<String, String>,
 }
 
@@ -503,7 +503,7 @@ impl DocMeta {
         Self {
             id,
             created_at: Self::now(),
-            crated_by: created_by,
+            created_by,
             props: HashMap::new(),
         }
     }
@@ -513,7 +513,7 @@ impl DocMeta {
         Self {
             id,
             created_at: Self::now(),
-            crated_by: created_by,
+            created_by,
             props: HashMap::new(),
         }
     }
@@ -532,7 +532,7 @@ impl Default for DocMeta {
         Self {
             id: DocId(Uuid::new_v4()),
             created_at: Self::now(),
-            crated_by: client_id,
+            created_by: client_id,
             props: HashMap::new(),
         }
     }

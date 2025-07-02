@@ -1,19 +1,31 @@
+use serde::ser::SerializeStruct;
+use serde::Serialize;
+use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
 use std::io::BufRead;
 use std::ops::Deref;
-
-use serde::ser::SerializeStruct;
-use serde::Serialize;
+use std::rc::Rc;
 
 use crate::id::{Id, IdRange, Split, WithId, WithIdRange};
 use crate::item::{Content, ItemData, ItemIterator, ItemKind, ItemRef};
+use crate::natom::AItem;
+use crate::nlist::{InnerList, ListContent, NList};
 use crate::store::WeakStoreRef;
 use crate::types::Type;
 use crate::NString;
 
+#[derive(Debug)]
+pub(crate) struct InnerText {
+    pub(crate) store: WeakStoreRef,
+    pub(crate) flags: u8,
+    pub(crate) data: AItem,
+    pub(crate) parent: Option<Type>,
+    content: ListContent<NString>,
+}
+
 #[derive(Clone, Debug)]
 pub struct NText {
-    pub(crate) item: ItemRef,
+    inner: Rc<RefCell<InnerText>>,
 }
 
 impl NText {
@@ -42,19 +54,20 @@ impl NText {
 
 impl NText {
     pub(crate) fn new(id: Id, store: WeakStoreRef) -> Self {
-        let data = ItemData {
-            id,
-            kind: ItemKind::Text,
-            ..ItemData::default()
-        };
-
+        let data = AItem::new(id).with_kind(ItemKind::Text);
         Self {
-            item: ItemRef::new(data.into(), store),
+            inner: Rc::new(RefCell::new(InnerList {
+                store,
+                flags: 0,
+                data,
+                parent: None,
+                content: ListContent::default(),
+            })),
         }
     }
 
     pub(crate) fn clear(&self) {
-        self.item_ref()
+        self.borrow_mut()
             .borrow()
             .items()
             .iter()
@@ -175,36 +188,17 @@ impl Serialize for NText {
     }
 }
 
-impl Hash for NText {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id().hash(state);
-    }
-}
+impl Deref for NText {
+    type Target = Rc<RefCell<InnerText>>;
 
-impl WithId for NText {
-    #[inline]
-    fn id(&self) -> Id {
-        self.item.borrow().id()
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
 
 impl WithIdRange for NText {
     fn range(&self) -> IdRange {
-        self.borrow().id().range(1)
-    }
-}
-
-impl Deref for NText {
-    type Target = ItemRef;
-
-    fn deref(&self) -> &Self::Target {
-        &self.item
-    }
-}
-
-impl From<ItemRef> for NText {
-    fn from(item: ItemRef) -> Self {
-        Self { item }
+        self.id().range(1)
     }
 }
 
