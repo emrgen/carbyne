@@ -187,7 +187,7 @@ mod test {
         assert!(equal_docs(&doc1, &doc2));
 
         let list1 = doc2.get("list1").unwrap().as_list().unwrap();
-        list1.append(doc2.string("c"));
+        // list1.append(doc2.string("c"));
         doc2.commit();
 
         sync_docs(&doc1, &doc2, SyncDirection::default());

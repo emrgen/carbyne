@@ -19,7 +19,7 @@ use crate::item::{Content, DocProps, ItemKey};
 use crate::json::JsonDoc;
 use crate::mark::Mark;
 use crate::natom::NAtom;
-use crate::nlist::NList;
+use crate::nlist::{ListRef, NList};
 use crate::nmap::NMap;
 use crate::nstring::NString;
 use crate::ntext::NText;
@@ -35,7 +35,7 @@ pub struct Doc {
     pub(crate) meta: DocMeta,
     /// The root is the root of the document.
     /// It is a CRDT map that contains all the items in the document.
-    pub(crate) root: NMap,
+    pub(crate) root: Type,
     /// The store is a reference to the DocStore.
     /// It is used to manage the state of the document.
     pub(crate) store: StoreRef,
@@ -59,6 +59,7 @@ impl Doc {
         let store_ref = Rc::new(RefCell::new(store));
         let weak = Rc::downgrade(&store_ref);
         let root = NMap::new(root_id, weak);
+        let root = Type::from(root);
 
         // root.set_content(DocProps::new(opts.id.clone(), opts.crated_by.clone()));
 
@@ -271,41 +272,45 @@ impl Doc {
     }
 
     /// Create a new list type in the document
-    pub fn list(&self) -> NList {
+    pub fn list(&self) -> Type {
         let id = self.store.borrow_mut().next_id();
         let list = NList::new(id, Rc::downgrade(&self.store));
+        let list = Type::from(list);
         self.store.borrow_mut().insert(list.clone());
 
         list
     }
 
     /// Create a new map type in the document
-    pub fn map(&self) -> NMap {
+    pub fn map(&self) -> Type {
         let id = self.store.borrow_mut().next_id();
         let map = NMap::new(id, Rc::downgrade(&self.store));
+        let map = Type::from(map);
         self.store.borrow_mut().insert(map.clone());
 
         map
     }
 
     /// Create a new atom type in the document
-    pub fn atom(&self, content: impl Into<Content>) -> NAtom {
+    pub fn atom(&self, content: impl Into<Content>) -> Type {
         let atom = NAtom::new(self.next_id(), content.into(), Rc::downgrade(&self.store));
+        let atom = Type::from(atom);
         self.store.borrow_mut().insert(atom.clone());
 
         atom
     }
 
     /// Create a new text type in the document
-    pub fn text(&self) -> NText {
+    pub fn text(&self) -> Type {
         let text = NText::new(self.next_id(), Rc::downgrade(&self.store));
+        let text = Type::from(text);
         self.store.borrow_mut().insert(text.clone());
 
         text
     }
 
     /// Create a new string type in the document
-    pub fn string(&self, value: impl Into<String>) -> NString {
+    pub fn string(&self, value: impl Into<String>) -> Type {
         let content = value.into();
         let id = self
             .store
@@ -313,6 +318,7 @@ impl Doc {
             .next_id_range(content.len() as ClockTick)
             .start_id();
         let string = NString::new(id, content, Rc::downgrade(&self.store));
+        let string = Type::from(string);
         self.store.borrow_mut().insert(string.clone());
 
         string
@@ -353,7 +359,7 @@ impl Doc {
 impl Doc {
     #[inline]
     pub(crate) fn add_mark(&self, mark: Mark) {
-        self.root.add_mark(mark);
+        // self.root.add_mark(mark);
     }
 
     #[inline]

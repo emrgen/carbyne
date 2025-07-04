@@ -1,63 +1,65 @@
 use crate::id::{Id, IdRange, WithId, WithIdRange, WithTarget};
+use crate::inner_type::InnerType;
 use crate::item::{Content, ItemData, ItemKey, ItemKind};
-use crate::natom::AItem;
-use crate::nlist::{ListContent, NList};
-use crate::nmark::NMark;
-use crate::ntext::InnerText;
+use crate::nlist::NList;
 use crate::store::WeakStoreRef;
-use crate::{NString, Type};
+use crate::{Item, NString, Type};
 use fake::Opt;
 use serde::ser::SerializeStruct;
 use serde::Serialize;
 use serde_json::Value;
 use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
-#[derive(Debug)]
-pub(crate) struct InnerMove {
-    // pub(crate) store: WeakStoreRef,
-    pub(crate) flags: u8,
-    pub(crate) data: AItem,
-    pub(crate) parent: Option<Type>,
-    pub(crate) target: Option<Type>,
+#[derive(Debug, Clone)]
+pub(crate) struct MoveRef(Rc<RefCell<NMove>>);
+
+impl Hash for MoveRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.borrow().hash(state);
+    }
 }
 
 /// NMove represents a move operation in the document.
 /// It is similar to proxy but one instance is valid for multiple move operations.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct NMove {
-    inner: Rc<RefCell<InnerMove>>,
+    store: WeakStoreRef,
+    item: Item,
+    flags: u8,
+    parent: Option<Type>,
+    target: Option<Type>,
 }
 
 impl NMove {
     pub(crate) fn new(id: Id, target: Type, store: WeakStoreRef) -> NMove {
-        let data = AItem::new(id).with_kind(ItemKind::Text);
         Self {
-            inner: Rc::new(RefCell::new(InnerMove {
-                // store,
-                flags: 0,
-                data,
-                parent: None,
-                target: None,
-            })),
+            store,
+            flags: 0,
+            item: Item::new(id),
+            parent: None,
+            target: None,
         }
     }
 
     #[inline]
-    pub(crate) fn set_parent(&self, parent: Option<Type>) {
-        self.borrow_mut().parent = parent;
+    pub(crate) fn set_parent(&mut self, parent: Option<Type>) {
+        self.parent = parent;
     }
 
     #[inline]
     pub(crate) fn get_parent(&self) -> Option<Type> {
-        self.borrow_mut().parent.clone()
+        self.parent.clone()
     }
 
     #[inline]
     pub(crate) fn depth(&self) -> usize {
-        self.borrow().parent.as_ref().map_or(0, |t| t.depth() + 1)
+        self.parent.as_ref().map_or(0, |t| {
+            debug_assert_ne!(t.id(), self.id());
+            t.depth() + 1
+        })
     }
 
     // #[inline]
@@ -71,7 +73,7 @@ impl NMove {
 
     #[inline]
     pub(crate) fn size(&self) -> usize {
-        if let Some(target) = self.get_target().as_ref() {
+        if let Some(target) = &self.target {
             target.size()
         } else {
             0
@@ -80,16 +82,12 @@ impl NMove {
 
     #[inline]
     fn get(&self, key: ItemKey) -> Option<Type> {
-        if let Some(target) = self.get_target().as_ref() {
-            target.get(key)
-        } else {
-            None
-        }
+        self.target.as_ref().map_or(None, |t| t.get(key))
     }
 
     #[inline]
     fn set(&self, key: String, item: Type) {
-        if let Some(target) = self.get_target().as_ref() {
+        if let Some(target) = self.target.as_ref() {
             target.set(key, item);
         }
     }
@@ -101,42 +99,42 @@ impl NMove {
 
     #[inline]
     fn prepend(&self, item: Type) {
-        if let Some(target) = self.get_target().as_ref() {
+        if let Some(target) = self.target.as_ref() {
             target.prepend(item);
         }
     }
 
     #[inline]
     fn append(&self, item: Type) {
-        if let Some(target) = self.get_target().as_ref() {
+        if let Some(target) = self.target.as_ref() {
             target.append(item);
         }
     }
 
     #[inline]
     fn insert(&self, offset: usize, item: Type) {
-        if let Some(target) = self.get_target().as_ref() {
+        if let Some(target) = self.target.as_ref() {
             target.insert(offset, item);
         }
     }
 
     #[inline]
     fn remove(&self, key: ItemKey) {
-        if let Some(target) = self.get_target().as_ref() {
+        if let Some(target) = self.target.as_ref() {
             target.remove(key);
         }
     }
 
     #[inline]
     fn clear(&self) {
-        if let Some(target) = self.get_target().as_ref() {
+        if let Some(target) = self.target.as_ref() {
             target.clear();
         }
     }
 
     #[inline]
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        if let Some(target) = self.get_target().as_ref() {
+        if let Some(target) = self.target.as_ref() {
             serde_json::Value::Null
             // target.to_json()
         } else {
@@ -145,24 +143,34 @@ impl NMove {
     }
 }
 
+impl InnerType for NMove {
+    fn store(&self) -> &WeakStoreRef {
+        &self.store
+    }
+
+    fn flag(&self) -> &u8 {
+        &self.flags
+    }
+
+    fn flag_mut(&mut self) -> &mut u8 {
+        &mut self.flags
+    }
+
+    fn size(&self) -> usize {
+        self.target.as_ref().map_or(0, |t| t.size())
+    }
+
+    fn parent(&self) -> &Option<Type> {
+        &self.parent
+    }
+}
+
 impl Serialize for NMove {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::ser::Serializer,
     {
-        self.get_target().serialize(serializer).into()
-    }
-}
-
-impl WithTarget for NMove {
-    #[inline]
-    fn set_target(&self, target: Type) {
-        self.borrow_mut().target = Some(target);
-    }
-
-    #[inline]
-    fn get_target(&self) -> Option<Type> {
-        self.borrow().target.clone()
+        self.target.serialize(serializer).into()
     }
 }
 
@@ -175,7 +183,7 @@ impl Hash for NMove {
 impl WithId for NMove {
     #[inline]
     fn id(&self) -> Id {
-        self.borrow().data.id()
+        self.id
     }
 }
 
@@ -187,10 +195,16 @@ impl WithIdRange for NMove {
 }
 
 impl Deref for NMove {
-    type Target = Rc<RefCell<InnerMove>>;
+    type Target = Item;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        &self.item
+    }
+}
+
+impl DerefMut for NMove {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.item
     }
 }
 
@@ -207,9 +221,10 @@ mod tests {
         }
     }
 
-    fn get_list_text(list: &NList) -> Vec<String> {
-        list.borrow()
-            .content
+    fn get_list_text(list: &Type) -> Vec<String> {
+        list.as_list()
+            .unwrap()
+            .children()
             .iter()
             .filter(|t| t.is_visible())
             .map(get_text)

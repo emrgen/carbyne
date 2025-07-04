@@ -49,35 +49,35 @@ pub(crate) struct Table {
 
 impl Table {
     pub(crate) fn add(&mut self, item: &ItemData, kind_flag: u8, flag: u8) {
-        let mut data = Data {
-            id_client: item.id.client,
-            id_clock: item.id.clock,
-            kind_flag,
-            flags: flag,
-            ..Default::default()
-        };
+        // let mut data = Data {
+        //     id_client: item.id.client,
+        //     id_clock: item.id.clock,
+        //     kind_flag,
+        //     flags: flag,
+        //     ..Default::default()
+        // };
+        //
+        // if !matches!(item.content, Content::Null) {
+        //     let content = serde_json::to_string(&item.content).unwrap();
+        //     // println!("content: {}", content);
+        //     data.content = content;
+        //     // self.content.push(content);
+        // }
 
-        if !matches!(item.content, Content::Null) {
-            let content = serde_json::to_string(&item.content).unwrap();
-            // println!("content: {}", content);
-            data.content = content;
-            // self.content.push(content);
-        }
+        // if let Some(left_id) = item.left_id {
+        //     data.left_id_client = left_id.client;
+        //     data.left_id_clock = left_id.clock;
+        // } else if let Some(parent_id) = item.parent_id {
+        //     data.parent_id_client = parent_id.client;
+        //     data.parent_id_clock = parent_id.clock;
+        // }
+        //
+        // if let Some(right_id) = item.right_id {
+        //     data.right_id_client = right_id.client;
+        //     data.right_id_clock = right_id.clock;
+        // }
 
-        if let Some(left_id) = item.left_id {
-            data.left_id_client = left_id.client;
-            data.left_id_clock = left_id.clock;
-        } else if let Some(parent_id) = item.parent_id {
-            data.parent_id_client = parent_id.client;
-            data.parent_id_clock = parent_id.clock;
-        }
-
-        if let Some(right_id) = item.right_id {
-            data.right_id_client = right_id.client;
-            data.right_id_clock = right_id.clock;
-        }
-
-        self.data.push(data);
+        // self.data.push(data);
     }
 
     pub(crate) fn buffer(&self) -> Vec<u8> {
@@ -110,16 +110,16 @@ mod test {
 
     #[test]
     fn test_table() {
-        let mut table = Table::default();
+        // let mut table = Table::default();
+        //
+        // for i in (0..6000) {
+        //     let random_char = std::char::from_u32(i).unwrap();
+        //     table.data.push(Row {
+        //         id: random_char.to_string(),
+        //     });
+        // }
 
-        for i in (0..6000) {
-            let random_char = std::char::from_u32(i).unwrap();
-            table.data.push(Row {
-                id: random_char.to_string(),
-            });
-        }
-
-        let bytes = serde_columnar::to_vec(&table).unwrap();
-        println!("size: {}", bytes.len());
+        // let bytes = serde_columnar::to_vec(&table).unwrap();
+        // println!("size: {}", bytes.len());
     }
 }

@@ -4,235 +4,117 @@ use crate::delete::DeleteItem;
 use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::id::{Id, IdRange, WithId, WithIdRange, WithTarget};
 use crate::index::{BTreeIndex, IBTree, ItemIndexMap};
-use crate::index_tree;
 use crate::index_tree::{IndexTree, ValueIter};
 use crate::inner_type::InnerType;
 use crate::item::{Content, ItemData, ItemKey, ItemKind};
-use crate::natom::{AItem, InnerAtom, NAtom};
-use crate::nmove::NMove;
+use crate::list_content::ListContent;
+use crate::natom::NAtom;
+use crate::nmove::{MoveRef, NMove};
 use crate::store::{DocStore, WeakStoreRef};
 use crate::types::Type;
+use crate::{index_tree, Item};
 use log::warn;
 use serde::ser::{Serialize, SerializeStruct};
 use std::cell::{RefCell, RefMut};
 use std::collections::vec_deque::Iter;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
-use std::ops::{Deref, Index};
+use std::ops::{Deref, DerefMut, Index};
 use std::rc::Rc;
 
-// expose a vec like api for get, insert, remove, index_of
-#[derive(Debug)]
-pub(crate) enum ListContent<T: Debug + Clone + Eq + Hash> {
-    Small(Vec<T>),
-    Large(IndexTree<T>),
-}
-
-impl<T: Debug + Clone + Eq + Hash> Default for ListContent<T> {
-    fn default() -> Self {
-        ListContent::Small(Vec::new())
-    }
-}
-
-impl<T: Debug + Clone + Eq + Hash> ListContent<T> {
-    fn get(&self, index: usize) -> Option<&T> {
-        match self {
-            ListContent::Small(v) => v.get(index),
-            ListContent::Large(v) => v.at_index(index),
-        }
-    }
-
-    fn is_small(&self) -> bool {
-        match self {
-            ListContent::Small(_) => true,
-            ListContent::Large(_) => false,
-        }
-    }
-
-    // auto upgrade to index tree when item count reach above a threshold
-    fn insert(&mut self, index: usize, item: T) {
-        // the small container size limit is a runtime config
-        if self.is_small() && self.size() == 16 {
-            let mut tree = IndexTree::new();
-            match self {
-                ListContent::Small(v) => v.drain(0..).enumerate().for_each(|(i, t)| {
-                    tree.insert(i, t);
-                }),
-                _ => {}
-            };
-
-            *self = ListContent::Large(tree)
-        }
-
-        match self {
-            ListContent::Small(v) => {
-                v.insert(index, item);
-            }
-            ListContent::Large(v) => {
-                v.insert(index, item);
-            }
-        }
-    }
-
-    // auto downgrade to vec when item count reach below a threshold
-    pub(crate) fn remove(&self, index: usize) -> Option<&T> {
-        None
-    }
-
-    pub(crate) fn first(&self) -> Option<&T> {
-        self.get(0)
-    }
-
-    pub(crate) fn last(&self) -> Option<&T> {
-        self.get(self.size() - 1)
-    }
-
-    pub(crate) fn append(&mut self, item: T) {
-        self.insert(self.size(), item);
-    }
-
-    pub(crate) fn prepend(&mut self, item: T) {
-        self.insert(0, item);
-    }
-
-    pub(crate) fn remove_item(&mut self, item: &T) {
-        if let Some(index) = self.index_of(item) {
-            self.remove(index);
-        }
-    }
-
-    fn index_of(&self, item: &T) -> Option<usize> {
-        match self {
-            ListContent::Small(v) => v.iter().position(|r| r == item),
-            ListContent::Large(v) => v.index_of(item),
-        }
-    }
-
-    fn size(&self) -> usize {
-        match self {
-            ListContent::Small(v) => v.len(),
-            ListContent::Large(v) => v.size(),
-        }
-    }
-
-    fn contains(&self, item: &T) -> bool {
-        match self {
-            ListContent::Small(v) => v.iter().position(|r| r == item).map_or(false, |v| true),
-            ListContent::Large(v) => v.contains(item),
-        }
-    }
-
-    // iterate over all list items
-    pub(crate) fn iter(&self) -> ListContentIter<'_, T> {
-        match self {
-            ListContent::Small(v) => ListContentIter::Small(v.iter()),
-            ListContent::Large(v) => ListContentIter::Large(v.iter_from(0).unwrap()),
-        }
-    }
-}
-
-enum ListContentIter<'a, T: Debug> {
-    Small(std::slice::Iter<'a, T>),
-    Large(ValueIter<'a, T>),
-}
-
-impl<'a, V: Debug> Iterator for ListContentIter<'a, V> {
-    type Item = (&'a V);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            ListContentIter::Small(v) => v.next(),
-            ListContentIter::Large(v) => v.next(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct InnerList {
-    pub(crate) store: WeakStoreRef,  // 16
-    pub(crate) flags: u8,            // 1
-    pub(crate) data: AItem,          // 16
-    pub(crate) parent: Option<Type>, // 16
-    pub(crate) content: ListContent<Type>,
-}
-
 #[derive(Clone, Debug)]
-pub struct NList {
-    inner: Rc<RefCell<InnerList>>,
+pub struct ListRef(Rc<RefCell<NList>>);
+
+impl ListRef {
+    fn append(&self, child: Type) {
+        self.0.borrow_mut().append(child);
+    }
+
+    fn prepend(&self, child: Type) {
+        self.0.borrow_mut().prepend(child);
+    }
+
+    fn insert(&self, offset: usize, child: Type) {
+        self.0.borrow_mut().insert(offset, child);
+    }
+
+    pub(crate) fn children(&self) -> Vec<Type> {
+        self.0.borrow().children()
+    }
+}
+
+impl From<NList> for ListRef {
+    fn from(value: NList) -> Self {
+        ListRef(Rc::new(RefCell::new(value)))
+    }
+}
+
+impl Hash for ListRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.borrow().hash(state);
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct NList {
+    pub(crate) store: WeakStoreRef,        // 16
+    pub(crate) flags: u8,                  // 1
+    pub(crate) item: Item,                 // ??
+    pub(crate) parent: Option<Type>,       // 16
+    pub(crate) content: ListContent<Type>, // 16
 }
 
 impl NList {
     pub(crate) fn new(id: Id, store: WeakStoreRef) -> Self {
-        let data = AItem::new(id).with_kind(ItemKind::List);
         Self {
-            inner: Rc::new(RefCell::new(InnerList {
-                store,
-                flags: 0,
-                data,
-                parent: None,
-                content: ListContent::default(),
-            })),
+            store,
+            flags: 0,
+            item: Item::new(id),
+            parent: None,
+            content: ListContent::default(),
         }
     }
 
     #[inline]
     pub fn size(&self) -> usize {
-        self.inner.borrow().content.size()
+        self.content.size()
     }
 
     #[inline]
     pub fn get(&self, key: impl Into<ItemKey>) -> Option<Type> {
         if let ItemKey::Number(offset) = key.into() {
-            return self.inner.borrow().content.get(offset).map(|v| v.clone());
+            return self.content.get(offset).map(|v| v.clone());
         }
         None
     }
 
     #[inline]
-    pub fn content(&self) -> Content {
-        // let types = self.borrow().content.iter()
-        Content::Types(vec![])
-    }
-
-    #[inline]
     pub(crate) fn index_of(&self, target: &Type) -> Option<usize> {
-        self.inner.borrow().content.index_of(target)
+        self.content.index_of(target)
     }
 
     #[inline]
-    pub(crate) fn prepend(&self, item: impl Into<Type>) {
-        let item = item.into();
-        item.set_parent(Some(self.into()));
-
-        let content = &mut self.borrow_mut().content;
-
-        // set the right id
-        content.first().map(|f| item.set_right_id(f.id()));
-        content.prepend(item);
+    fn prepend(&mut self, item: Type) {
+        self.content.first().map(|f| item.set_right_id(f.id()));
+        self.content.prepend(item);
     }
 
     #[inline]
     /// append an item to the end of the list
-    pub fn append(&self, item: impl Into<Type>) {
-        let item = item.into();
-        item.set_parent(Some(self.into()));
-
-        let content = &mut self.borrow_mut().content;
-        // set the left id
-        content.last().map(|f| item.set_left_id(f.id()));
-        content.prepend(item);
+    fn append(&mut self, item: Type) {
+        self.content.last().map(|f| item.set_left_id(f.id()));
+        self.content.prepend(item);
     }
 
-    pub fn insert(&self, offset: usize, item: impl Into<Type>) {
+    fn insert(&mut self, offset: usize, item: Type) {
         let size = self.size();
-        let item = item.into();
 
         if offset == 0 {
             self.prepend(item);
         } else if offset >= size {
             self.append(item);
         } else {
-            self.borrow_mut().content.insert(offset, item);
+            self.content.insert(offset, item);
         }
     }
 
@@ -240,40 +122,40 @@ impl NList {
     fn remove(&self, key: ItemKey) {
         if let ItemKey::Number(offset) = key {
             if offset < self.size() {
-                self.borrow_mut().content.remove(offset);
+                self.content.remove(offset);
             }
         }
     }
 
     // remove the item front the list items
     #[inline]
-    pub(crate) fn remove_child(&self, child: &Type) {
-        self.borrow_mut().content.remove_item(child);
+    pub(crate) fn remove_child(&mut self, child: &Type) {
+        self.content.remove_item(child);
         // child.disconnect();
     }
 
     // move the item after the target item
-    pub(crate) fn move_after(&self, before: &Type, target: &Type) {
-        if let Some(index) = self.borrow().content.index_of(before) {
+    pub(crate) fn move_after(&mut self, before: &Type, target: &Type) {
+        if let Some(index) = self.content.index_of(before) {
             self.move_to(index + 1, target);
         }
     }
 
     // move the item before the target item
-    pub(crate) fn move_before(&self, after: &Type, target: &Type) {
-        if let Some(index) = self.borrow().content.index_of(after) {
+    pub(crate) fn move_before(&mut self, after: &Type, target: &Type) {
+        if let Some(index) = self.content.index_of(after) {
             self.move_to(index, target);
         }
     }
 
     // move the item to the offset position in the new parent list
-    pub(crate) fn move_to(&self, offset: usize, target: &Type) {
-        if creates_cycle(&self.into(), target) {
-            warn!("can not move nodes within, creates cycle");
-            return;
-        }
+    pub(crate) fn move_to(&mut self, offset: usize, target: &Type) {
+        // if creates_cycle(&self.into(), target) {
+        //     warn!("can not move nodes within, creates cycle");
+        //     return;
+        // }
 
-        let store = self.borrow().store.clone();
+        let store = self.store.clone();
         let id = store.upgrade().unwrap().borrow_mut().next_id();
         let mover: Type = NMove::new(id, target.clone(), store.clone()).into();
 
@@ -293,12 +175,19 @@ impl NList {
     // internally all children are marked deleted
     #[inline]
     pub(crate) fn clear(&self) {
-        self.borrow_mut().content.iter().for_each(|t| t.delete())
+        self.content.iter().for_each(|t| t.delete())
+    }
+
+    pub(crate) fn children(&self) -> Vec<Type> {
+        self.content
+            .iter()
+            .filter(|t| t.is_visible())
+            .map(|t| t.clone())
+            .collect()
     }
 
     pub(crate) fn to_json(&self) -> serde_json::Value {
         let content = self
-            .borrow()
             .content
             .iter()
             .filter(|t| t.is_visible())
@@ -309,18 +198,46 @@ impl NList {
     }
 }
 
+impl InnerType for NList {
+    fn store(&self) -> &WeakStoreRef {
+        &self.store
+    }
+
+    fn flag(&self) -> &u8 {
+        &self.flags
+    }
+
+    fn flag_mut(&mut self) -> &mut u8 {
+        &mut self.flags
+    }
+
+    fn size(&self) -> usize {
+        1
+    }
+
+    fn parent(&self) -> &Option<Type> {
+        &self.parent
+    }
+}
+
 impl Deref for NList {
-    type Target = Rc<RefCell<InnerList>>;
+    type Target = Item;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        &self.item
+    }
+}
+
+impl DerefMut for NList {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.item
     }
 }
 
 impl WithIdRange for NList {
     #[inline]
     fn range(&self) -> IdRange {
-        self.borrow().id().range(1)
+        self.id.range(1)
     }
 }
 
@@ -346,6 +263,12 @@ impl Serialize for NList {
         // s.serialize_field("content", &serde_json::Value::Array(content))?;
 
         s.end()
+    }
+}
+
+impl Hash for NList {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
     }
 }
 

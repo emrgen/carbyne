@@ -1,17 +1,29 @@
 use crate::bimapid::FieldId;
 use crate::id::{Id, IdRange, WithId, WithIdRange};
+use crate::inner_type::InnerType;
 use crate::item::{Content, ItemKey, ItemKind};
 use crate::mark::Mark;
-use crate::natom::AItem;
+use crate::nlist::NList;
+use crate::nmove::NMove;
 use crate::store::WeakStoreRef;
 use crate::types::Type;
+use crate::Item;
 use hashbrown::HashMap;
 use serde::ser::SerializeStruct;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
+
+#[derive(Debug, Clone)]
+pub(crate) struct MapRef(Rc<RefCell<NMap>>);
+
+impl Hash for MapRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.borrow().hash(state);
+    }
+}
 
 #[derive(Debug, Default)]
 struct MapContent {
@@ -19,38 +31,30 @@ struct MapContent {
 }
 
 #[derive(Debug)]
-pub(crate) struct InnerMap {
+pub(crate) struct NMap {
     pub(crate) store: WeakStoreRef,  // 16
     pub(crate) flags: u8,            // 1
-    pub(crate) data: AItem,          // 16
+    pub(crate) item: Item,           // 16
     pub(crate) parent: Option<Type>, // 16
     content: MapContent,             // 16
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct NMap {
-    inner: Rc<RefCell<InnerMap>>,
 }
 
 impl Eq for NMap {}
 
 impl PartialEq for NMap {
     fn eq(&self, other: &Self) -> bool {
-        self.borrow().id() == other.id()
+        self.id == other.id
     }
 }
 
 impl NMap {
     pub(crate) fn new(id: Id, store: WeakStoreRef) -> Self {
-        let data = AItem::new(id).with_kind(ItemKind::List);
         Self {
-            inner: Rc::new(RefCell::new(InnerMap {
-                store,
-                flags: 0,
-                data,
-                parent: None,
-                content: MapContent::default(),
-            })),
+            store,
+            flags: 0,
+            item: Item::new(id),
+            parent: None,
+            content: MapContent::default(),
         }
     }
 
@@ -59,18 +63,17 @@ impl NMap {
         self.children().len()
     }
 
-    pub(crate) fn content(&self) -> Content {
-        let types = self
-            .borrow()
-            .content
-            .map
-            .iter()
-            .filter(|(_, t)| t.last().map_or(false, |t| t.is_visible()))
-            .map(|(f, t)| t.last().cloned().unwrap())
-            .collect();
-
-        Content::Types(types)
-    }
+    // pub(crate) fn content(&self) -> Content {
+    //     let types = self
+    //         .content
+    //         .map
+    //         .iter()
+    //         .filter(|(_, t)| t.last().map_or(false, |t| t.is_visible()))
+    //         .map(|(f, t)| t.last().cloned().unwrap())
+    //         .collect();
+    //
+    //     Content::Types(types)
+    // }
 
     pub(crate) fn add_mark(&self, mark: impl Into<Mark>) {
         // let content = MarkContent::new(self.id().into(), mark.into());
@@ -91,7 +94,6 @@ impl NMap {
         let key = key.into().as_string();
         if let Some(field_id) = self.map_field_id(&key) {
             return self
-                .borrow()
                 .content
                 .map
                 .get(&field_id)
@@ -103,8 +105,7 @@ impl NMap {
     }
 
     fn map_field_id(&self, key: &String) -> Option<FieldId> {
-        self.borrow()
-            .store
+        self.store
             .upgrade()
             .map(|store| store.borrow().fields.get_field_id(key).cloned())
             .flatten()
@@ -113,7 +114,6 @@ impl NMap {
     pub(crate) fn set(&self, field: impl Into<String>, item: impl Into<Type>) {
         let item = item.into();
         if let Some(field_id) = self.map_field_id(&field.into()) {
-            let inner = self.borrow_mut();
             // insert into inner content by field id
         }
     }
@@ -121,8 +121,7 @@ impl NMap {
     pub(crate) fn remove(&self, key: ItemKey) {
         let field = key.as_string();
         if let Some(field_id) = self.map_field_id(&field) {
-            self.borrow_mut()
-                .content
+            self.content
                 .map
                 .get(&field_id)
                 .map(|v| v.last().map(|t| t.delete()));
@@ -137,7 +136,7 @@ impl NMap {
     //
     pub(crate) fn keys(&self) -> Vec<String> {
         let items: Vec<_> = self.children();
-        let store = self.borrow().store.upgrade().unwrap();
+        let store = self.store.upgrade().unwrap();
         let fields = &store.borrow().fields;
         let mut keys = Vec::new();
         for t in items {
@@ -155,8 +154,7 @@ impl NMap {
 
     // delete all visible last items for each key
     pub(crate) fn clear(&self) {
-        self.borrow()
-            .content
+        self.content
             .map
             .iter()
             .filter(|(_, t)| t.last().map_or(false, |t| t.is_visible()))
@@ -169,8 +167,7 @@ impl NMap {
 
     fn children(&self) -> Vec<Type> {
         let mut list = Vec::new();
-        self.borrow()
-            .content
+        self.content
             .map
             .iter()
             .filter(|(_, t)| t.last().map_or(false, |t| t.is_visible()))
@@ -184,7 +181,7 @@ impl NMap {
     }
 
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        let store = self.borrow().store.upgrade().unwrap();
+        let store = self.store.upgrade().unwrap();
         let fields = &store.borrow().fields;
         let map = self.children();
         let mut content = serde_json::Map::new();
@@ -196,17 +193,45 @@ impl NMap {
     }
 }
 
+impl InnerType for NMap {
+    fn store(&self) -> &WeakStoreRef {
+        &self.store
+    }
+
+    fn flag(&self) -> &u8 {
+        &self.flags
+    }
+
+    fn flag_mut(&mut self) -> &mut u8 {
+        &mut self.flags
+    }
+
+    fn size(&self) -> usize {
+        1
+    }
+
+    fn parent(&self) -> &Option<Type> {
+        &self.parent
+    }
+}
+
 impl Deref for NMap {
-    type Target = Rc<RefCell<InnerMap>>;
+    type Target = Item;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        &self.item
+    }
+}
+
+impl DerefMut for NMap {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.item
     }
 }
 
 impl WithIdRange for NMap {
     fn range(&self) -> IdRange {
-        self.borrow().id().range(1)
+        self.id.range(1)
     }
 }
 
@@ -221,7 +246,7 @@ impl Serialize for NMap {
         // let map = self.borrow().as_map(self.store.clone());
         // let content = serde_json::to_value(map).unwrap_or_default();
 
-        let store = self.borrow().store.upgrade().unwrap();
+        let store = self.store.upgrade().unwrap();
         let fields = &store.borrow().fields;
 
         let mut map = HashMap::new();
@@ -239,6 +264,12 @@ impl Serialize for NMap {
         s.serialize_field("content", &content)?;
 
         s.end()
+    }
+}
+
+impl Hash for NMap {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
     }
 }
 

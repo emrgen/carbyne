@@ -4,30 +4,33 @@ use std::cell::RefCell;
 use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 use std::io::BufRead;
-use std::ops::{Deref, Range};
+use std::ops::{Deref, DerefMut, Range};
 use std::rc::Rc;
 
 use crate::id::{Id, IdRange, Split, WithId, WithIdRange};
 use crate::item::{Content, ItemData, ItemKind};
-use crate::mark::MarkContent;
-use crate::natom::AItem;
-use crate::nlist::{InnerList, ListContent, NList};
+use crate::list_content::ListContent;
+use crate::nlist::NList;
 use crate::store::WeakStoreRef;
 use crate::types::Type;
-use crate::NString;
-
-#[derive(Debug)]
-pub(crate) struct InnerText {
-    pub(crate) store: WeakStoreRef,
-    pub(crate) flags: u8,
-    pub(crate) data: AItem,
-    pub(crate) parent: Option<Type>,
-    content: ListContent<NString>,
-}
+use crate::{Item, NString};
 
 #[derive(Clone, Debug)]
-pub struct NText {
-    inner: Rc<RefCell<InnerText>>,
+pub struct TextRef(Rc<RefCell<NText>>);
+
+impl Hash for TextRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.borrow().hash(state);
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct NText {
+    pub(crate) store: WeakStoreRef,
+    pub(crate) flags: u8,
+    pub(crate) item: Item,
+    pub(crate) parent: Option<Type>,
+    content: ListContent<Type>,
 }
 
 impl NText {
@@ -56,21 +59,17 @@ impl NText {
 
 impl NText {
     pub(crate) fn new(id: Id, store: WeakStoreRef) -> Self {
-        let data = AItem::new(id).with_kind(ItemKind::Text);
         Self {
-            inner: Rc::new(RefCell::new(InnerText {
-                store,
-                flags: 0,
-                data,
-                parent: None,
-                content: ListContent::default(),
-            })),
+            store,
+            flags: 0,
+            item: Item::new(id),
+            parent: None,
+            content: ListContent::default(),
         }
     }
 
     pub(crate) fn clear(&self) {
-        self.borrow()
-            .content
+        self.content
             .iter()
             .filter(|t| t.is_visible())
             .for_each(|item| item.delete());
@@ -81,45 +80,37 @@ impl NText {
     //     Content::Types(items)
     // }
 
-    pub(crate) fn add_mark(&self, mark: MarkContent, range: Range<usize>) {}
-
-    pub(crate) fn remove_mark(&self, mark: MarkContent, range: Range<usize>) {}
+    // pub(crate) fn add_mark(&self, mark: MarkContent, range: Range<usize>) {}
+    //
+    // pub(crate) fn remove_mark(&self, mark: MarkContent, range: Range<usize>) {}
 
     pub(crate) fn replace(&self, child: &Type, with: (Type, Type)) {}
 
     // calculate the visible text length
     pub(crate) fn size(&self) -> usize {
-        self.borrow()
-            .content
+        self.content
             .iter()
             .map(|t| if (t.is_visible()) { t.size() } else { 0 })
             .fold(0, |acc, size| acc + size)
     }
 
-    pub fn append(&self, item: impl Into<Type>) {
-        let item = item.into();
+    pub fn append(&mut self, item: Type) {
         assert!(item.kind().is_string());
-        let item = item.as_string().unwrap();
-        let content = &mut self.borrow_mut().content;
-
-        // set the left id
-        content.last().map(|f| item.set_left_id(f.range().end_id()));
-
-        content.append(item);
+        self.content
+            .last()
+            .map(|f| item.set_left_id(f.range().end_id()));
+        self.content.append(item);
     }
 
-    pub fn prepend(&self, item: impl Into<Type>) {
-        let item = item.into();
+    pub fn prepend(&mut self, item: Type) {
         assert!(item.kind().is_string());
-        let content = &mut self.borrow_mut().content;
-
         // set the right id
-        content.first().map(|f| item.set_right_id(f.id()));
-        content.prepend(item.as_string().unwrap());
+        self.content.first().map(|f| item.set_right_id(f.id()));
+        self.content.prepend(item);
     }
 
     /// Insert string in text
-    pub fn insert(&self, offset: usize, item: impl Into<Type>) {
+    pub fn insert(&mut self, offset: usize, item: impl Into<Type>) {
         let item = item.into();
 
         assert!(item.kind().is_string());
@@ -147,7 +138,6 @@ impl NText {
 
     pub(crate) fn to_json(&self) -> serde_json::Value {
         let items: Vec<_> = self
-            .borrow()
             .content
             .iter()
             .filter(|t| t.is_visible())
@@ -160,11 +150,14 @@ impl NText {
     // raw un marked text content
     pub(crate) fn text_content(&self) -> String {
         let mut ret = String::new();
-        self.borrow()
-            .content
+        self.content
             .iter()
             .filter(|t| t.is_visible())
-            .for_each(|item| item.write_content(&mut ret));
+            .for_each(|item| {
+                item.as_string()
+                    .iter()
+                    .for_each(|item| item.write_content(&mut ret))
+            });
 
         ret
     }
@@ -190,16 +183,28 @@ impl Serialize for NText {
 }
 
 impl Deref for NText {
-    type Target = Rc<RefCell<InnerText>>;
+    type Target = Item;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        &self.item
+    }
+}
+
+impl DerefMut for NText {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.item
     }
 }
 
 impl WithIdRange for NText {
     fn range(&self) -> IdRange {
-        self.id().range(1)
+        self.id.range(1)
+    }
+}
+
+impl Hash for NText {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
     }
 }
 

@@ -4,19 +4,17 @@ use crate::delete::DeleteItem;
 use crate::doc::{Doc, DocMeta};
 use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::id::{Id, IdRange, Split, WithId, WithIdRange, WithTarget};
-use crate::inner_type::InnerFlag;
-use crate::item::{Content, ItemData, ItemKey, ItemKind, ItemRef, WithIndex};
+use crate::item::{Content, ItemData, ItemKey, ItemKind};
 use crate::mark::Mark;
-use crate::natom::{AItemData, NAtom};
-use crate::nlist::NList;
-use crate::nmap::NMap;
+use crate::natom::{AtomRef, NAtom};
+use crate::nlist::{ListRef, NList};
+use crate::nmap::{MapRef, NMap};
 use crate::nmark::NMark;
-use crate::nmove::NMove;
+use crate::nmove::{MoveRef, NMove};
 use crate::nstring::NString;
 use crate::ntext::NText;
 use crate::store::{StoreRef, WeakStoreRef};
-use crate::{print_yaml, Client};
-use fake::Opt;
+use crate::{print_yaml, Client, StringRef, TextRef};
 use fractional_index::FractionalIndex;
 use serde::Serialize;
 use serde_json::Value;
@@ -26,15 +24,21 @@ use std::ops::Range;
 /// Type is a wrapper around the different item types in the store.
 #[derive(Debug, Clone, Default, Hash)]
 pub enum Type {
-    List(NList),     // container
-    Map(NMap),       // container
-    Text(NText),     // container
-    String(NString), // elementary
-    Atom(NAtom),     // elementary
-    Move(NMove),     // elementary
-    Mark(NMark),     // elementary
+    List(ListRef),     // container
+    Map(MapRef),       // container
+    Text(TextRef),     // container
+    String(StringRef), // elementary
+    Atom(AtomRef),     // elementary
+    Move(MoveRef),     // elementary
+    Mark(NMark),       // elementary
     #[default]
     Identity, // used for empty items
+}
+
+impl Type {
+    pub(crate) fn keys(&self) -> Vec<String> {
+        todo!()
+    }
 }
 
 impl Type {
@@ -56,7 +60,7 @@ impl Type {
 
 impl Type {
     #[inline]
-    pub(crate) fn as_list(&self) -> Option<NList> {
+    pub(crate) fn as_list(&self) -> Option<ListRef> {
         match self {
             Type::List(n) => Some(n.clone()),
             _ => None,
@@ -64,7 +68,7 @@ impl Type {
     }
 
     #[inline]
-    pub(crate) fn as_map(&self) -> Option<NMap> {
+    pub(crate) fn as_map(&self) -> Option<MapRef> {
         match self {
             Type::Map(n) => Some(n.clone()),
             _ => None,
@@ -72,14 +76,15 @@ impl Type {
     }
 
     #[inline]
-    pub(crate) fn as_text(&self) -> Option<NText> {
+    pub(crate) fn as_text(&self) -> Option<TextRef> {
         match self {
             Type::Text(n) => Some(n.clone()),
             _ => None,
         }
     }
+
     #[inline]
-    pub(crate) fn as_string(&self) -> Option<NString> {
+    pub(crate) fn as_string(&self) -> Option<StringRef> {
         match self {
             Type::String(n) => Some(n.clone()),
             _ => None,
@@ -87,7 +92,7 @@ impl Type {
     }
 
     #[inline]
-    pub(crate) fn as_atom(&self) -> Option<NAtom> {
+    pub(crate) fn as_atom(&self) -> Option<AtomRef> {
         match self {
             Type::Atom(n) => Some(n.clone()),
             _ => None,
@@ -95,7 +100,7 @@ impl Type {
     }
 
     #[inline]
-    pub(crate) fn as_move(&self) -> Option<NMove> {
+    pub(crate) fn as_move(&self) -> Option<MoveRef> {
         match self {
             Type::Move(n) => Some(n.clone()),
             _ => None,
@@ -106,14 +111,6 @@ impl Type {
     pub(crate) fn as_mark(&self) -> Option<NMark> {
         match self {
             Type::Mark(n) => Some(n.clone()),
-            _ => None,
-        }
-    }
-
-    #[inline]
-    pub(crate) fn as_doc(&self) -> Option<Doc> {
-        match self {
-            // Type::Doc(n) => Some(n.clone()),
             _ => None,
         }
     }
@@ -836,13 +833,13 @@ impl WithIdRange for Type {
 
 impl From<NList> for Type {
     fn from(n: NList) -> Self {
-        Self::List(n)
+        Self::List(ListRef::from(n))
     }
 }
 
 impl From<NMap> for Type {
     fn from(n: NMap) -> Self {
-        Self::Map(n)
+        Self::Map(MapRef::from(n))
     }
 }
 

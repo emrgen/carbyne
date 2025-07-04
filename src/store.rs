@@ -9,7 +9,7 @@ use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::frontier::Frontier;
 use crate::id::{ClockTick, Id, IdRange, Split, WithId, WithIdRange};
 use crate::id_store::ClientIdStore;
-use crate::item::{ItemData, ItemKind, ItemRef};
+use crate::item::{ItemData, ItemKind};
 use crate::state::ClientState;
 use crate::types::Type;
 use crate::{print_yaml, Client, ClientId};
@@ -323,9 +323,7 @@ impl DocStore {
         self.items.get(&key)
     }
 
-    pub(crate) fn insert(&mut self, item: impl Into<Type>) {
-        let item = item.into();
-
+    pub(crate) fn insert(&mut self, item: Type) {
         if item.kind() == ItemKind::String {
             self.id_map.insert(item.id().range(item.size() as u32));
         }
@@ -600,7 +598,7 @@ impl From<TypeStore> for ItemDataStore {
         let mut store = ItemDataStore::default();
         for (_, items) in value.items.iter() {
             for (_, item) in items.iter() {
-                store.insert(item.data().clone());
+                store.insert(item.item().clone());
             }
         }
 

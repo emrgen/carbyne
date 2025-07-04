@@ -1,54 +1,86 @@
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use serde_json::Value;
 use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
+use crate::decoder::{Decode, DecodeContext, Decoder};
+use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::id::{Id, IdRange, Split, WithId, WithIdRange};
-use crate::item::{Content, ItemData, ItemKind, ItemRef};
-use crate::natom::AItem;
-use crate::nlist::ListContent;
+use crate::item::{Content, ItemData, ItemKind};
 use crate::nmap::NMap;
-use crate::ntext::InnerText;
 use crate::store::WeakStoreRef;
 use crate::types::Type;
-use crate::NString;
+use crate::{Item, NString};
 
-#[derive(Debug)]
-enum MarkContent {
+#[derive(Clone, Debug)]
+pub(crate) struct MarkRef {
+    inner: Rc<RefCell<NMark>>,
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash)]
+pub(crate) enum Mark {
     Bold,
     Italic,
     Underline,
-    Strike,
+    StrikeThrough,
+    Code,
     Subscript,
     Superscript,
-    Color(u16),
-    Background(u16),
-    Custom(u16),
+    Color(Id),
+    Background(Id),
+    Link(Id),
+    Custom(Id),
+    #[default]
+    None,
+}
+
+impl Serialize for Mark {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Mark::Bold => "bold".serialize(serializer),
+            Mark::Italic => "italic".serialize(serializer),
+            Mark::Underline => "underline".serialize(serializer),
+            Mark::StrikeThrough => "strikethrough".serialize(serializer),
+            Mark::Code => "code".serialize(serializer),
+            Mark::Subscript => "subscript".serialize(serializer),
+            Mark::Superscript => "superscript".serialize(serializer),
+            Mark::Color(ref color) => color.serialize(serializer),
+            Mark::Background(ref color) => color.serialize(serializer),
+            Mark::Link(ref url) => url.serialize(serializer),
+            Mark::Custom(ref custom) => custom.serialize(serializer),
+            Mark::None => "_".serialize(serializer),
+        }
+    }
+}
+
+impl Encode for Mark {
+    fn encode<T: Encoder>(&self, e: &mut T, ctx: &mut EncodeContext) {}
+}
+
+impl Decode for Mark {
+    fn decode<D: Decoder>(d: &mut D, ctx: &DecodeContext) -> Result<Mark, String> {
+        todo!()
+    }
 }
 
 #[derive(Debug)] // 24
-pub(crate) struct InnerMark {
-    pub(crate) flags: u8,   // 1
-    pub(crate) data: AItem, // 16
-    content: MarkContent,   // 5
-}
-
-#[derive(Clone, Debug)]
 pub(crate) struct NMark {
-    inner: Rc<RefCell<InnerMark>>,
+    pub(crate) flags: u8,  // 1
+    pub(crate) item: Item, // 16
+    content: Mark,         // 5
 }
 
 impl NMark {
-    pub(crate) fn new(id: Id, content: MarkContent, store: WeakStoreRef) -> Self {
-        let data = AItem::new(id).with_kind(ItemKind::Text);
+    pub(crate) fn new(id: Id, content: Mark, store: WeakStoreRef) -> Self {
         Self {
-            inner: Rc::new(RefCell::new(InnerMark {
-                flags: 0,
-                data,
-                content,
-            })),
+            flags: 0,
+            item: Item::new(id),
+            content,
         }
     }
 
@@ -96,10 +128,16 @@ impl Serialize for NMark {
 }
 
 impl Deref for NMark {
-    type Target = Rc<RefCell<InnerMark>>;
+    type Target = Item;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        &self.item
+    }
+}
+
+impl DerefMut for NMark {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.item
     }
 }
 
@@ -112,7 +150,7 @@ impl Hash for NMark {
 impl WithId for NMark {
     #[inline]
     fn id(&self) -> Id {
-        self.borrow().data.id()
+        self.id
     }
 }
 
@@ -125,7 +163,7 @@ impl WithIdRange for NMark {
 #[cfg(test)]
 mod tests {
     use crate::doc::Doc;
-    use crate::mark::Mark;
+    use crate::nmark::Mark;
 
     #[test]
     fn test_mark() {
