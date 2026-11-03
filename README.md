@@ -55,3 +55,26 @@ Update `Cargo.toml` members list and run `cargo build -w`.
 - [ ] Counter CRDT
 - [ ] Fugue algorithm
 - [ ] Time travel / version control
+
+## Move Cycle Handling
+
+Status: **Partially implemented**. Cycle detection works; full redo logic deferred.
+
++ ✅ `creates_cycle(parent, child)` – checks if move creates tree cycle
++ ✅ `has_mover` flag on changes – marks which contain move operations  
++ ✅ Movers stored separately – quick lookup for undo/redo
++ ⚠️  **Gap**: Per move-op.pdf, when cycle detected should undo dependent moves & reapply
+   - Current: just skips the cycle-causing move (see doc.rs:246)
+   - Missing: logic to find dependent moves, undo, reapply in topological order
+
+**To expose move-skip detection API:**
+- Need: `HashMap<ChangeId, Vec<ChangeId>>` reverse dependency graph
+- Time: 1–2h to add + maintain in DAG.insert()
+- Then: expose `doc.has_mover(change_id)` and `doc.dependents(change_id)`
+
+**Optimization summary:**
+- Core DAG: BTreeSet, HashMap – already optimized ✅
+- `change_sorter.update_count()`: O(n) per insert – TODO marked, not blocking
+- Reverse deps: currently O(n) scan – will add HashMap for O(1) lookup later
+
+See: `crates/carbyne/src/cycle.rs`, `nmove.rs`, `dag.rs`, `change.rs:ChangeNodeFlags::MOVE`

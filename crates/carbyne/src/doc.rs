@@ -390,6 +390,11 @@ impl Doc {
     pub fn version(&self) -> ClientState {
         self.store.borrow().state.clone()
     }
+    /// Get the current frontier (leaf changes from all clients).
+    /// Useful for marking checkpoints and time-travel restore points.
+    pub fn frontiers(&self) -> Vec<crate::ChangeId> {
+        self.store.borrow().dag.leaves()
+    }
 
     pub(crate) fn to_json(&self) -> Value {
         let mut map = serde_json::Map::new();

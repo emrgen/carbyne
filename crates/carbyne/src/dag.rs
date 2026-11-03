@@ -305,6 +305,12 @@ impl ChangeDag {
 
         sorted_changes
     }
+
+    /// Get the current DAG leaves (frontier).
+    /// Returns all current leaf changes (one per client that has edits).
+    pub(crate) fn leaves(&self) -> Vec<ChangeId> {
+        self.ends.values().cloned().collect()
+    }
 }
 
 // Testing utility to generate a random DAG
@@ -546,5 +552,33 @@ mod tests {
             assert_ne!(sort1, sort2);
             assert_eq!(sorted_changes1, sorted_changes2)
         }
+    }
+
+    #[test]
+    fn test_dag_leaves() {
+        let mut dag = ChangeDag::default();
+        let c1 = ChangeId::new(1, 0, 0);
+        let c2 = ChangeId::new(1, 1, 1);
+        let c3 = ChangeId::new(2, 0, 0);
+
+        let mut client_map = FixedClientMapper::default();
+        client_map.add(1, Client::UUID(Uuid::new_v4()));
+        client_map.add(2, Client::UUID(Uuid::new_v4()));
+
+        // Single client, single operation
+        dag.insert(ChangeNode::root(c1), &client_map);
+        assert_eq!(dag.leaves(), vec![c1]);
+
+        // Same client, second operation (c1 no longer leaf)
+        dag.insert(ChangeNode::new(c2, vec![c1]), &client_map);
+        assert_eq!(dag.leaves(), vec![c2]);
+
+        // Different client (now two leaves)
+        dag.insert(ChangeNode::root(c3), &client_map);
+        let mut leaves = dag.leaves();
+        leaves.sort();
+        assert_eq!(leaves.len(), 2);
+        assert!(leaves.contains(&c2));
+        assert!(leaves.contains(&c3));
     }
 }
