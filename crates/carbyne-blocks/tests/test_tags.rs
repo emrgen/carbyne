@@ -322,7 +322,7 @@ fn test_table_id_immutability() -> Result<(), Box<dyn std::error::Error>> {
     let table_id_1 = blocks1[0].table_id;
 
     // Modify block content (but not tag)
-    if let Some(root_block) = root.get(0) {
+    if let Some(root_block) = root.get(0usize) {
         if let Type::Map(m) = root_block {
             m.set("content", doc.string("Modified"));
         }
@@ -337,5 +337,40 @@ fn test_table_id_immutability() -> Result<(), Box<dyn std::error::Error>> {
     // Tag should not change after content modification
     assert_eq!(table_id_1, table_id_2, "table_id should remain immutable");
 
+    Ok(())
+}
+
+/// Re-syncing an existing block must update in place (one row, created_at kept,
+/// updated content) and the store must run in WAL mode.
+#[test]
+fn test_sync_upserts_in_place_and_wal() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_db = NamedTempFile::new()?;
+    let doc = Arc::new(Doc::new(Default::default()));
+    let root = doc.list();
+    let block = doc.map();
+    block.set("content", doc.string("v1"));
+    root.append(block.clone());
+    doc.commit();
+
+    let store = BlockStore::new(doc.clone(), temp_db.path())?;
+    store.rebuild_all()?;
+    let v1 = doc.version();
+    let before = store.all_blocks()?;
+    assert_eq!(before.len(), 1);
+
+    block.set("content", doc.string("v2"));
+    doc.commit();
+    let changes = store.sync(v1)?;
+    assert_eq!(changes.len(), 1);
+
+    let after = store.all_blocks()?;
+    assert_eq!(after.len(), 1, "upsert must not duplicate the row");
+    assert_eq!(after[0].created_at, before[0].created_at);
+    assert!(after[0].content.contains("v2"));
+    assert!(!after[0].content.contains("v1"));
+
+    let conn = rusqlite::Connection::open(temp_db.path())?;
+    let mode: String = conn.query_row("PRAGMA journal_mode", [], |r| r.get(0))?;
+    assert_eq!(mode, "wal");
     Ok(())
 }

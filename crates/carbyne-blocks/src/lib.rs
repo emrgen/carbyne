@@ -418,6 +418,12 @@ impl BlockStore {
         }
         Ok(())
     }
+    /// Mark a single text operation as applied (convenience wrapper)
+    /// Idempotent: marking twice is safe (INSERT OR IGNORE)
+    pub fn mark_text_op(&self, instance_id: &str, op_id: &str) -> Result<()> {
+        self.mark_ops_applied(instance_id, vec![TextOpId { id: op_id.to_string() }])
+    }
+
 
     /// Check if operation was already applied (for dedup)
     pub fn is_op_applied(&self, instance_id: &str, op_id: &str) -> Result<bool> {

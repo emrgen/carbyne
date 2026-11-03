@@ -17,6 +17,24 @@ fn test_mark_ops_applied() {
     assert!(store.is_op_applied("inst-1", "seq-1#client-A").unwrap());
     assert!(!store.is_op_applied("inst-1", "seq-2#client-A").unwrap());
 }
+#[test]
+fn test_mark_text_op() {
+    let doc = Arc::new(Doc::new(Default::default()));
+    let tmpfile = NamedTempFile::new().unwrap();
+    let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
+
+    // Mark single op using convenience method
+    store.mark_text_op("inst-1", "op-id-123").unwrap();
+
+    // Check if applied
+    assert!(store.is_op_applied("inst-1", "op-id-123").unwrap());
+    assert!(!store.is_op_applied("inst-1", "op-id-456").unwrap());
+
+    // Mark same op again: idempotent
+    store.mark_text_op("inst-1", "op-id-123").unwrap();
+    assert!(store.is_op_applied("inst-1", "op-id-123").unwrap());
+}
+
 
 #[test]
 fn test_record_placement() {
