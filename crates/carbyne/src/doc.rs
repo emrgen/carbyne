@@ -15,7 +15,7 @@ use crate::decoder::{Decode, DecodeContext, Decoder};
 use crate::diff::Diff;
 use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::id::{Id, WithId, WithTarget};
-use crate::item::{Content, DocProps, ItemKey};
+use crate::item::{Content, DocProps, ItemKey, ItemKind};
 use crate::json::JsonDoc;
 use crate::mark::Mark;
 use crate::natom::NAtom;
@@ -192,12 +192,16 @@ impl Doc {
             diff.adjust(&store_ref)
         };
 
+        let mut ready: Vec<ChangeId> = Vec::new();
+        let mut mover_change_ids: HashSet<ChangeId> = HashSet::new();
+
         {
             let mut store = self.store.borrow_mut();
             store.fields.extend(&diff.fields);
             store.state.clients.extend(&diff.state.clients);
 
             let (mut changes, mut movers) = diff.changes();
+            mover_change_ids = movers.clone();
             // println!("changes: {:?}", changes);
             // println!("movers: {:?}", movers);
 
@@ -266,7 +270,7 @@ impl Doc {
                 // println!("redo: {:?}", redo);
             }
 
-            let mut ready = sort_changes(parents);
+            ready = sort_changes(parents);
 
             println!("ready: {:?}", ready);
             // println!("parents: {:?}", parents);
@@ -325,6 +329,28 @@ impl Doc {
             // TODO: for now we just apply the changes using a transaction, the changes are not used yet
             let mut tx = Tx::new(Rc::downgrade(&self.store.clone()), diff);
             tx.commit();
+        }
+
+        // establish mover-stack entries for newly-integrated remote move items, in
+        // causal (ready) order. This mirrors the local NList::move_to bookkeeping,
+        // which only runs for locally-created moves.
+        if !mover_change_ids.is_empty() {
+            let mut store = self.store.borrow_mut();
+            for change_id in &ready {
+                if mover_change_ids.contains(change_id) {
+                    for mover in store.movers.get_by_range(*change_id) {
+                        match (mover.item_ref().get_target(), mover.parent()) {
+                            (Some(target), Some(parent)) => {
+                                if !creates_cycle(&parent, &target) {
+                                    target.item_ref().mark_moved();
+                                    store.add_mover(target.id(), mover);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
         }
     }
 

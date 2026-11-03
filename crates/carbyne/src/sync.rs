@@ -281,7 +281,7 @@ mod test {
     }
 
     #[test]
-    fn smoke_remote_move_sync() {
+    fn test_sync_move_across_docs() {
         let doc1 = Doc::default();
         let doc2 = doc1.clone_deep();
         doc2.update_client();
@@ -295,22 +295,13 @@ mod test {
         doc1.commit();
 
         sync_docs(&doc1, &doc2, SyncDirection::LeftToRight);
-        println!("doc1 before move: {}", serde_json::to_string(&doc1).unwrap());
-        println!("doc2 before move: {}", serde_json::to_string(&doc2).unwrap());
         assert!(equal_docs(&doc1, &doc2), "initial sync mismatch");
 
         let a_t: crate::types::Type = a.into();
         a_t.move_to(&list, 3);
         doc1.commit();
 
-        println!("doc1 after move: {}", serde_json::to_string(&doc1).unwrap());
-
-        println!("doc1.version(): {:?}, doc2.version(): {:?}", doc1.version().state(), doc2.version().state());
-        let diff = doc1.diff(&doc2);
-        println!("diff clients: {:?}, size: {}", diff.items.clients(), diff.items.size());
-
         sync_docs(&doc1, &doc2, SyncDirection::LeftToRight);
-        println!("doc2 after sync: {}", serde_json::to_string(&doc2).unwrap());
 
         assert!(equal_docs(&doc1, &doc2), "move did not sync to doc2");
     }
