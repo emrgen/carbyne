@@ -75,82 +75,33 @@ impl Diff {
         let mut non_mover_changes = HashMap::default();
         let mut mover_changes = HashSet::new();
 
-        let mut clients = HashSet::new();
-        clients.extend(self.items.clients());
-        clients.extend(self.deletes.clients());
-
-        if self.changes.size() == 0 {
-            // panic!("no changes in diff, using items and deletes");
-            for client in clients {
-                let mut items = ItemStore::default();
-                let mut delete_items = DeleteItemStore::default();
+        for (client_id, change_store) in self.changes.iter() {
+            for change_id in change_store.iter() {
+                let mut items = Vec::new();
+                let mut delete_items = Vec::new();
                 let mut moves = false;
-                let mut min_tick = u32::MAX;
-                let mut max_tick = u32::MIN;
 
-                if let Some(store) = self.items.id_store(&client) {
-                    for (_, item) in store.iter() {
+                if let Some(store) = self.items.id_store(client_id) {
+                    for item in store.get_range(&change_id.clone().into()) {
                         moves |= item.kind.is_move();
-                        items.insert(item.clone());
-                        let range = item.range();
-                        min_tick = min_tick.min(range.start);
-                        max_tick = max_tick.max(range.end);
+                        items.push(item.clone());
                     }
                 }
 
-                if let Some(store) = self.deletes.id_store(&client) {
-                    for (_, item) in store.iter() {
-                        let range = item.range();
-                        min_tick = min_tick.min(range.start);
-                        max_tick = max_tick.max(range.end);
+                if let Some(store) = self.deletes.id_store(client_id) {
+                    for item in store.get_range(&change_id.clone().into()) {
+                        delete_items.push(item.clone());
                     }
                 }
 
-                if min_tick != u32::MAX && max_tick != u32::MIN {
-                    // let change = ChangeData::new(
-                    //     ChangeId::new(client, min_tick, max_tick),
-                    //     items.into(),
-                    //     delete_items.into(),
-                    // );
-                    // mover_changes.push(change.clone());
-                    // changes.add(change);
+                let change =
+                    ChangeData::new(change_id.clone(), items, delete_items).with_mover(moves);
+
+                if moves {
+                    mover_changes.insert(change.id);
                 }
-            }
-        } else {
-            // panic!("changes in diff, using changes");
-            // if there are changes, we need to get the changes for each client
-            for (client_id, change_store) in self.changes.iter() {
-                for (change_id) in change_store.iter() {
-                    // println!("### change_id: {:?}", change_id);
-                    let mut items = Vec::new();
-                    let mut delete_items = Vec::new();
-                    let mut moves = false;
 
-                    if let Some(store) = self.items.id_store(client_id) {
-                        // println!("@@@ item: {:?}", IdRange::from(change_id.clone()));
-                        for item in store.get_range(&change_id.clone().into()) {
-                            // println!("### item: {:?}", item);
-                            moves |= item.kind.is_move();
-                            items.push(item.clone());
-                        }
-                    }
-
-                    if let Some(store) = self.deletes.id_store(client_id) {
-                        for item in store.get_range(&change_id.clone().into()) {
-                            delete_items.push(item.clone());
-                        }
-                    }
-
-                    let change =
-                        ChangeData::new(change_id.clone(), items, delete_items).with_mover(moves);
-
-                    // println!("change_id: {:?}, change: {:?}\n", change_id, change);
-                    if moves {
-                        mover_changes.insert(change.id);
-                    }
-
-                    non_mover_changes.insert(change.id, change);
-                }
+                non_mover_changes.insert(change.id, change);
             }
         }
 
