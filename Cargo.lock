@@ -235,6 +235,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "carbyne",
+ "criterion",
  "dashmap",
  "lru",
  "rusqlite",
@@ -258,6 +259,7 @@ dependencies = [
  "serde",
  "tempfile",
  "tokio",
+ "toml",
  "uuid",
 ]
 

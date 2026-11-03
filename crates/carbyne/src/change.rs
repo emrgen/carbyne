@@ -505,7 +505,7 @@ impl Decode for ChangeStore {
 
 impl Encode for ChangeStore {
     fn encode<T: Encoder>(&self, e: &mut T, ctx: &mut EncodeContext) {
-        e.u32(self.size() as u32);
+        e.u32(self.map.len() as u32);
         for (client, store) in self.map.iter() {
             ClientId::encode(client, e, ctx);
             ClientChangeStore::encode(store, e, ctx);

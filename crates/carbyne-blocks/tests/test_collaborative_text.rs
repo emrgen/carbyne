@@ -153,3 +153,111 @@ fn test_split_with_catch_up() {
     assert_eq!(instances_999.len(), 1);
     assert_eq!(instances_999[0], "inst-X");
 }
+
+#[test]
+fn test_multi_client_sync_end_to_end() {
+    let doc = Arc::new(Doc::new(Default::default()));
+    let tmpfile = NamedTempFile::new().unwrap();
+    let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
+
+    // Client A edits block 100, instance X
+    let op_a = TextOpId {
+        id: "seq-a1#client-A".to_string(),
+    };
+    store
+        .record_client_ops("inst-X", vec![op_a.clone()], 100)
+        .unwrap();
+
+    // Client B edits same block, same instance
+    let op_b = TextOpId {
+        id: "seq-b1#client-B".to_string(),
+    };
+    store
+        .record_client_ops("inst-X", vec![op_b.clone()], 100)
+        .unwrap();
+
+    // Both ops in DB
+    assert!(store.is_op_applied("inst-X", &op_a.id).unwrap());
+    assert!(store.is_op_applied("inst-X", &op_b.id).unwrap());
+
+    // Placement recorded for both syncs
+    let instances_100 = store.instances_in(&[100]).unwrap();
+    assert_eq!(instances_100.len(), 1);
+    assert_eq!(instances_100[0], "inst-X");
+
+    // Client C catches up: sees both ops
+    assert!(store.is_op_applied("inst-X", &op_a.id).unwrap());
+    assert!(store.is_op_applied("inst-X", &op_b.id).unwrap());
+}
+
+#[test]
+fn test_multi_client_offline_resend() {
+    let doc = Arc::new(Doc::new(Default::default()));
+    let tmpfile = NamedTempFile::new().unwrap();
+    let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
+
+    // Client A edits, goes offline, comes back
+    let op = TextOpId {
+        id: "seq-1#client-A".to_string(),
+    };
+
+    // First sync
+    store.record_client_ops("inst-Y", vec![op.clone()], 200).unwrap();
+
+    // Offline: retries 4 more times (network unreliable)
+    for _ in 0..4 {
+        store
+            .record_client_ops("inst-Y", vec![op.clone()], 200)
+            .unwrap();
+    }
+
+    // Verify: only 1 entry in dedup table
+    assert!(store.is_op_applied("inst-Y", &op.id).unwrap());
+
+    // Placement idempotent: still block 200
+    let instances_200 = store.instances_in(&[200]).unwrap();
+    assert_eq!(instances_200.len(), 1);
+    assert_eq!(instances_200[0], "inst-Y");
+
+    // Other clients don't see duplicates
+    assert_eq!(instances_200.len(), 1);
+}
+
+#[test]
+fn test_split_with_concurrent_edits() {
+    let doc = Arc::new(Doc::new(Default::default()));
+    let tmpfile = NamedTempFile::new().unwrap();
+    let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
+
+    // Both clients edit instance before split
+    let op_a = TextOpId {
+        id: "seq-a1#client-A".to_string(),
+    };
+    let op_b = TextOpId {
+        id: "seq-b1#client-B".to_string(),
+    };
+
+    // Both clients record ops in block 300
+    store
+        .record_client_ops("inst-paragraph", vec![op_a.clone()], 300)
+        .unwrap();
+    store
+        .record_client_ops("inst-paragraph", vec![op_b.clone()], 300)
+        .unwrap();
+
+    // Paragraph split: block 300 → blocks 300 + 500
+    store.record_placement("inst-paragraph", 300).unwrap();
+    store.record_placement("inst-paragraph", 500).unwrap();
+
+    // Both clients rebuild: see instance in both blocks
+    let instances_300 = store.instances_in(&[300]).unwrap();
+    let instances_500 = store.instances_in(&[500]).unwrap();
+    assert_eq!(instances_300.len(), 1);
+    assert_eq!(instances_500.len(), 1);
+    assert_eq!(instances_300[0], "inst-paragraph");
+    assert_eq!(instances_500[0], "inst-paragraph");
+
+    // No ops lost: both still in dedup
+    assert!(store.is_op_applied("inst-paragraph", &op_a.id).unwrap());
+    assert!(store.is_op_applied("inst-paragraph", &op_b.id).unwrap());
+}

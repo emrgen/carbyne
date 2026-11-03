@@ -264,6 +264,13 @@ fn encode_item(e: &mut EncoderV1, cx: &mut EncodeContext, value: &ItemData) {
         flags |= 1;
     }
 
+    // parent_id is only written when neither side nor left can recover it
+    let write_parent = value.side.is_none() && value.left_id.is_none() && value.parent_id.is_some();
+    // bit 4..7 hold side flags; side flags use at most 2 bits, so bit 6 is free
+    if write_parent {
+        flags |= 1 << 6;
+    }
+
     e.u8(flags);
 
     // println!("flags: {:b}", flags);
@@ -286,12 +293,8 @@ fn encode_item(e: &mut EncoderV1, cx: &mut EncodeContext, value: &ItemData) {
         right_id.encode(e, cx);
     }
 
-    // if side is none, that means we are using yata
-    // else we are using fugue
-    if value.side.is_none() && value.left_id.is_none() {
-        if let Some(parent_id) = value.parent_id {
-            parent_id.encode(e, cx);
-        }
+    if write_parent {
+        value.parent_id.unwrap().encode(e, cx);
     }
 
     // cx.table.add(value, kind_flags, flags);
@@ -305,7 +308,7 @@ fn decode_item(d: &mut DecoderV1, ctx: &DecodeContext) -> Result<ItemData, Strin
 
     let flags = d.u8()?;
 
-    let side: ItemSide = ItemSideFlags::from_bits(flags >> 4).unwrap().into();
+    let side: ItemSide = ItemSideFlags::from_bits((flags >> 4) & 0b11).unwrap().into();
 
     let content = if flags & 0b1000 != 0 {
         Content::decode(d, ctx)?
@@ -321,14 +324,11 @@ fn decode_item(d: &mut DecoderV1, ctx: &DecodeContext) -> Result<ItemData, Strin
 
     let id = Id::decode(d, ctx)?;
 
-    let is_root = matches!(content, Content::Doc(_));
     let mut left_id = None;
     let mut right_id = None;
     let mut parent_id = None;
-    let mut target_id = None;
-    let mut mover_id = None;
 
-    if !is_root && flags & 0b10 != 0 {
+    if flags & 0b10 != 0 {
         left_id = Some(Id::decode(d, ctx)?)
     }
 
@@ -336,16 +336,8 @@ fn decode_item(d: &mut DecoderV1, ctx: &DecodeContext) -> Result<ItemData, Strin
         right_id = Some(Id::decode(d, ctx)?)
     }
 
-    if side.is_none() && !is_root && flags & 0b10 == 0 {
+    if flags & (1 << 6) != 0 {
         parent_id = Some(Id::decode(d, ctx)?)
-    }
-
-    if flags & 0b1 != 0 {
-        target_id = Some(Id::decode(d, ctx)?)
-    }
-
-    if flags & 0b1 != 0 {
-        mover_id = Some(Id::decode(d, ctx)?)
     }
 
     // println!("id: {:?}, field: {:?}", id, field);

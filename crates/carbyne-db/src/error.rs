@@ -5,7 +5,7 @@ pub enum DbError {
     InstanceNotFound,
     StorageError(String),
     SerializationError(String),
-    LockPoisoned,
+    ConfigError(String),
 }
 
 impl fmt::Display for DbError {
@@ -14,7 +14,7 @@ impl fmt::Display for DbError {
             Self::InstanceNotFound => write!(f, "instance not found"),
             Self::StorageError(e) => write!(f, "storage error: {}", e),
             Self::SerializationError(e) => write!(f, "serialization error: {}", e),
-            Self::LockPoisoned => write!(f, "lock poisoned"),
+            Self::ConfigError(e) => write!(f, "config error: {}", e),
         }
     }
 }

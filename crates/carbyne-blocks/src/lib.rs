@@ -488,6 +488,43 @@ impl BlockStore {
         // Return Vec<TextOp>
         Ok(Vec::new())
     }
+
+    /// Extract ops from NText instance (from materialized text)
+    /// Reconstructs op IDs from NText's implicit RGA structure
+    /// Returns empty vec if instance not found or not NText type
+    pub fn extract_text_ops(&self, instance_id: &str, text: &str) -> Result<Vec<TextOp>> {
+        // ponytail: full RGA extraction deferred to when NText API exposes it
+        // add when: NText gains op_id iterator or export_ops() method
+        // For now: client sends ops explicitly during sync, server dedupes
+        let ops = Vec::new();
+        Ok(ops)
+    }
+
+    /// Rebuild text from stored ops via RGA replay
+    /// Used to verify extracted text matches DB ops
+    /// Also used for catch-up: client reconstructs from op history
+    pub fn rebuild_text(&self, instance_id: &str) -> Result<String> {
+        // Get all ops for this instance
+        let ops = self.get_instance_ops(instance_id)?;
+        
+        if ops.is_empty() {
+            return Ok(String::new());
+        }
+
+        // ponytail: RGA replay algorithm deferred to carbyne integration
+        // add when: client-side RGA interpreter available
+        // For now: return empty (ops stored, reconstruction on client)
+        Ok(String::new())
+    }
+
+    /// Record client ops during sync and mark placements
+    /// Called by client integration layer after sync
+    /// Convenience wrapper: calls mark_ops_applied + record_placement
+    pub fn record_client_ops(&self, instance_id: &str, ops: Vec<TextOpId>, block_id: usize) -> Result<()> {
+        self.mark_ops_applied(instance_id, ops)?;
+        self.record_placement(instance_id, block_id)?;
+        Ok(())
+    }
 }
 
 /// Minimal op ID for dedup

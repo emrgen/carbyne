@@ -357,6 +357,17 @@ mod test {
         doc.set("k1", doc.atom("fe"));
         doc.set("k2", doc.list());
 
+        // committed change + list with left/right links + a delete: this path used to
+        // panic with "decoder: out of bounds" because encode/decode item disagreed
+        let list = doc.list();
+        doc.set("list", list.clone());
+        let a = doc.atom("a");
+        list.append(a.clone());
+        list.append(doc.atom("b"));
+        list.append(doc.atom("c"));
+        doc.commit();
+        a.delete();
+        doc.commit();
         let mut encoder = EncoderV1::default();
 
         let diff = doc.diff(ClientState::default());

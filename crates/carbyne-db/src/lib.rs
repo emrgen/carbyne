@@ -7,3 +7,4 @@ pub mod sync;
 pub use instance::{DbId, DbInstance, DbName};
 pub use registry::DbRegistry;
 pub use storage::Storage;
+pub mod config;
