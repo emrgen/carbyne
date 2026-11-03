@@ -248,10 +248,8 @@ fn bench_sync_polling_pattern(c: &mut Criterion) {
                     last_state = doc.version();
                 } else {
                     // Compute full diff (expensive even if empty)
-                    let diff = doc.diff(black_box(last_state.clone()));
-                    if diff.is_empty() {
-                        empty_diffs += 1;
-                    }
+                    let _diff = doc.diff(black_box(last_state.clone()));
+                    empty_diffs += 1;
                 }
             }
             
