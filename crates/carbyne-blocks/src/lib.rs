@@ -8,7 +8,12 @@ use thiserror::Error;
 
 pub use carbyne::{Doc, Type, ClientState};
 
+
 pub mod storage;
+pub mod archive_job;
+
+// Re-export for convenience
+pub use storage::SessionStore;
 
 #[derive(Error, Debug)]
 pub enum BlockError {

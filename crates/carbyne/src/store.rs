@@ -171,7 +171,7 @@ impl DocStore {
         // track if change has a move item
         let mut moves = false;
         // update the deps for the inserted items
-        self.items.get_by_range(change_id).iter().map(|item| {
+        self.items.get_by_range(change_id).iter().for_each(|item| {
             let data = item.data();
             moves |= data.kind == ItemKind::Move;
             deps.extend(data.deps())
@@ -181,7 +181,9 @@ impl DocStore {
         self.deletes
             .get_by_range(change_id)
             .iter()
-            .map(|item| deps.insert(item.target()));
+            .for_each(|item| {
+                deps.insert(item.target());
+            });
 
         // connect the new change with the change dependencies
         // this will create the change DAG
