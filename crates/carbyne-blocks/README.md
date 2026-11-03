@@ -112,7 +112,6 @@ pub struct Block {
 ```rust
 pub struct BlockChange {
     pub block_id: usize,
-    pub is_new: bool,
     pub is_deleted: bool,
     pub block: Option<Block>,
 }
@@ -150,10 +149,13 @@ dirty_blocks() finds:
 ```
 1. Get from CRDT: root.get(block_id) → Type::Map{...}
 2. Extract fields: rebuild_block(id, Type::Map)
-3. Check SQLite: exists?
-4. INSERT or UPDATE
-5. Emit: BlockChange { id, is_new, block }
+3. INSERT ... ON CONFLICT(id) DO UPDATE  (one statement per block)
+4. Emit: BlockChange { id, block }
 ```
+
+SQLite is opened with `journal_mode=WAL`, `synchronous=NORMAL`: one fsync per
+checkpoint instead of per `sync()` transaction. Survives process crash; a power
+loss can lose transactions since the last checkpoint.
 
 ### 3. Caching
 

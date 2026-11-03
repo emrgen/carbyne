@@ -261,3 +261,116 @@ fn test_split_with_concurrent_edits() {
     assert!(store.is_op_applied("inst-paragraph", &op_a.id).unwrap());
     assert!(store.is_op_applied("inst-paragraph", &op_b.id).unwrap());
 }
+
+#[test]
+fn test_split_instance_op() {
+    let doc = Arc::new(Doc::new(Default::default()));
+    let tmpfile = NamedTempFile::new().unwrap();
+    let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
+
+    // Initial: instance in block 100
+    store.record_placement("inst-para", 100).unwrap();
+    assert!(store.instances_in(&[100]).unwrap().contains(&"inst-para".to_string()));
+
+    // User splits paragraph at position 25: block 100 → blocks 100 + 999
+    store
+        .split_instance("inst-para", 100, 999)
+        .unwrap();
+
+    // Instance now tracked in both blocks
+    let instances_100 = store.instances_in(&[100]).unwrap();
+    let instances_999 = store.instances_in(&[999]).unwrap();
+    assert!(instances_100.contains(&"inst-para".to_string()));
+    assert!(instances_999.contains(&"inst-para".to_string()));
+
+    // Query both blocks at once
+    let all_instances = store.instances_in(&[100, 999]).unwrap();
+    assert_eq!(all_instances.len(), 1); // Still one instance
+    assert_eq!(all_instances[0], "inst-para");
+}
+
+#[test]
+fn test_join_instances_op() {
+    let doc = Arc::new(Doc::new(Default::default()));
+    let tmpfile = NamedTempFile::new().unwrap();
+    let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
+
+    // Two paragraphs: instances in separate blocks
+    store.record_placement("inst-para-1", 100).unwrap();
+    store.record_placement("inst-para-2", 200).unwrap();
+
+    // Add ops to each instance (simulating edits)
+    store
+        .mark_ops_applied("inst-para-1", vec![TextOpId { id: "op-1a".to_string() }])
+        .unwrap();
+    store
+        .mark_ops_applied("inst-para-2", vec![TextOpId { id: "op-2a".to_string() }])
+        .unwrap();
+
+    // User joins: paragraphs merge → para-2 stays, para-1 ops move to para-2
+    store
+        .join_instances("inst-para-1", "inst-para-2", 100)
+        .unwrap();
+
+    // Target instance now in target block
+    let instances_100 = store.instances_in(&[100]).unwrap();
+    assert!(instances_100.contains(&"inst-para-2".to_string()));
+
+    // Para-2 now has both ops
+    assert!(store.is_op_applied("inst-para-2", "op-1a").unwrap());
+    assert!(store.is_op_applied("inst-para-2", "op-2a").unwrap());
+
+    // Para-1 ops still tracked in para-1 (separate instance)
+    assert!(store.is_op_applied("inst-para-1", "op-1a").unwrap());
+}
+
+#[test]
+fn test_split_idempotent() {
+    let doc = Arc::new(Doc::new(Default::default()));
+    let tmpfile = NamedTempFile::new().unwrap();
+    let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
+
+    store.record_placement("inst-para", 100).unwrap();
+
+    // Split twice: should be idempotent
+    store
+        .split_instance("inst-para", 100, 999)
+        .unwrap();
+    store
+        .split_instance("inst-para", 100, 999)
+        .unwrap();
+
+    // Still one instance entry per block (INSERT OR IGNORE)
+    let instances_999 = store.instances_in(&[999]).unwrap();
+    assert_eq!(instances_999.len(), 1);
+    assert_eq!(instances_999[0], "inst-para");
+}
+
+#[test]
+fn test_join_idempotent() {
+    let doc = Arc::new(Doc::new(Default::default()));
+    let tmpfile = NamedTempFile::new().unwrap();
+    let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
+
+    store.record_placement("inst-para-1", 100).unwrap();
+    store.record_placement("inst-para-2", 200).unwrap();
+
+    store
+        .mark_ops_applied("inst-para-1", vec![TextOpId { id: "op-1".to_string() }])
+        .unwrap();
+    store
+        .mark_ops_applied("inst-para-2", vec![TextOpId { id: "op-2".to_string() }])
+        .unwrap();
+
+    // Join twice: idempotent
+    store
+        .join_instances("inst-para-1", "inst-para-2", 100)
+        .unwrap();
+    store
+        .join_instances("inst-para-1", "inst-para-2", 100)
+        .unwrap();
+
+    // Para-2 still has both ops (dedup prevents duplicates)
+    assert!(store.is_op_applied("inst-para-2", "op-1").unwrap());
+    assert!(store.is_op_applied("inst-para-2", "op-2").unwrap());
+}

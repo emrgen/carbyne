@@ -48,7 +48,6 @@ pub struct Block {
 #[derive(Clone, Debug)]
 pub struct BlockChange {
     pub block_id: usize,
-    pub is_new: bool,
     pub is_deleted: bool,
     pub block: Option<Block>,
 }
@@ -63,6 +62,10 @@ pub struct BlockStore {
 impl BlockStore {
     pub fn new<P: AsRef<Path>>(doc: Arc<Doc>, db_path: P) -> Result<Self> {
         let conn = Connection::open(db_path)?;
+        // WAL: readers don't block the sync writer; NORMAL: fsync at checkpoint, not per txn.
+        // Durable against process crash, not power loss within the last checkpoint window.
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS blocks (
                 id INTEGER PRIMARY KEY,
@@ -132,22 +135,15 @@ impl BlockStore {
         for block_id in dirty_indices {
             if let Some(block_type) = root.get(block_id) {
                 let block = self.rebuild_block(block_id, &block_type, &current_version, now)?;
-                let exists: bool = tx
-                    .query_row("SELECT 1 FROM blocks WHERE id = ?", [block_id], |_| Ok(true))
-                    .optional()?
-                    .unwrap_or(false);
-
-                if exists {
-                    tx.execute(
-                        "UPDATE blocks SET parent_id = ?, table_id = ?, block_type = ?, content = ?, version = ?, updated_at = ? WHERE id = ?",
-                        params![block.parent_id, block.table_id, &block.block_type, &block.content, &block.version, now, block_id],
-                    )?;
-                } else {
-                    tx.execute(
-                        "INSERT INTO blocks (id, parent_id, table_id, block_type, content, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        params![block_id, block.parent_id, block.table_id, &block.block_type, &block.content, &block.version, now, now],
-                    )?;
-                }
+                tx.execute(
+                    "INSERT INTO blocks (id, parent_id, table_id, block_type, content, version, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                     ON CONFLICT(id) DO UPDATE SET
+                        parent_id = excluded.parent_id, table_id = excluded.table_id,
+                        block_type = excluded.block_type, content = excluded.content,
+                        version = excluded.version, updated_at = excluded.updated_at",
+                    params![block_id, block.parent_id, block.table_id, &block.block_type, &block.content, &block.version, now, now],
+                )?;
 
 
                 // Record instance placement for this block (split/join tracking)
@@ -156,7 +152,6 @@ impl BlockStore {
                 }
                 changes.push(BlockChange {
                     block_id,
-                    is_new: !exists,
                     is_deleted: false,
                     block: Some(block),
                 });
@@ -451,6 +446,54 @@ impl BlockStore {
         )?;
         Ok(())
     }
+    /// Split: instance moves from source_block_id to target_block_id
+    /// Used when user splits a paragraph (e.g., block 100 → 100 + 999)
+    /// Idempotent: calling twice with same params is safe (INSERT OR IGNORE)
+    pub fn split_instance(
+        &self,
+        instance_id: &str,
+        source_block_id: usize,
+        target_block_id: usize,
+    ) -> Result<()> {
+        // Record instance in target block; source still has it too (both track same instance)
+        self.record_placement(instance_id, target_block_id)
+    }
+
+    /// Join: two instances merge into one
+    /// Used when user joins two paragraphs (e.g., blocks 100 + 999 → 100)
+    /// Merges ops from source_instance into target_instance in target_block_id
+    /// Idempotent: calling twice with same params is safe (INSERT OR IGNORE)
+    pub fn join_instances(
+        &self,
+        source_instance_id: &str,
+        target_instance_id: &str,
+        target_block_id: usize,
+    ) -> Result<()> {
+        let db = self.db.lock().unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        // 1. Record target instance in target block
+        db.execute(
+            "INSERT OR IGNORE INTO crdt_instance_placements (instance_id, block_id, placed_at)
+             VALUES (?, ?, ?)",
+            params![target_instance_id, target_block_id, now],
+        )?;
+
+        // 2. Merge ops: copy source_instance ops to target_instance
+        //    SELECT source ops, INSERT with target instance_id
+        //    This is idempotent (source and target ops tracked separately)
+        db.execute(
+            "INSERT OR IGNORE INTO text_op_dedup (instance_id, op_id, first_seen_at)
+             SELECT ?, op_id, first_seen_at FROM text_op_dedup WHERE instance_id = ?",
+            params![target_instance_id, source_instance_id],
+        )?;
+
+        Ok(())
+    }
+
 
     /// Get all instances that were placed in given block_ids
     /// Used to widen catch-up scope: blockIDs → instanceIDs
