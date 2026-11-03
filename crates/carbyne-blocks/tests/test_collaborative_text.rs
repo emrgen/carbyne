@@ -1,5 +1,5 @@
 use carbyne::Doc;
-use carbyne_blocks::{BlockStore, TextOpId};
+use carbyne_blocks::BlockStore;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 
@@ -10,7 +10,7 @@ fn test_mark_ops_applied() {
     let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
 
     // Mark op as applied
-    let ops = vec![TextOpId { id: "seq-1#client-A".to_string() }];
+    let ops = vec!["seq-1#client-A"];
     store.mark_ops_applied("inst-1", ops).unwrap();
 
     // Check if applied
@@ -90,10 +90,10 @@ fn test_op_dedup() {
     let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
 
     // Same op, marked 3 times (resends)
-    let op_id = TextOpId { id: "retry-id".to_string() };
+    let op_id = "retry-id";
 
     for _ in 0..3 {
-        store.mark_ops_applied("offline-inst", vec![op_id.clone()]).unwrap();
+        store.mark_ops_applied("offline-inst", vec![op_id]).unwrap();
     }
 
     // Should only be marked once (dedup)
@@ -124,8 +124,8 @@ fn test_concurrent_edits_different_clients() {
     // Both clients edit same instance
     store.record_placement("text-500", 500).unwrap();
 
-    let ops_a = vec![TextOpId { id: "seq-a1#client-A".to_string() }];
-    let ops_b = vec![TextOpId { id: "seq-b1#client-B".to_string() }];
+    let ops_a = vec!["seq-a1#client-A"];
+    let ops_b = vec!["seq-b1#client-B"];
 
     store.mark_ops_applied("text-500", ops_a).unwrap();
     store.mark_ops_applied("text-500", ops_b).unwrap();
@@ -144,10 +144,10 @@ fn test_offline_resend_dedup() {
     store.record_placement("offline-inst", 600).unwrap();
 
     // Same op, sent 5 times
-    let op = TextOpId { id: "retry-id".to_string() };
+    let op = "retry-id";
 
     for _ in 0..5 {
-        store.mark_ops_applied("offline-inst", vec![op.clone()]).unwrap();
+        store.mark_ops_applied("offline-inst", vec![op]).unwrap();
     }
 
     // Should only be tracked once
@@ -179,24 +179,20 @@ fn test_multi_client_sync_end_to_end() {
     let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
 
     // Client A edits block 100, instance X
-    let op_a = TextOpId {
-        id: "seq-a1#client-A".to_string(),
-    };
+    let op_a = "seq-a1#client-A";
     store
-        .record_client_ops("inst-X", vec![op_a.clone()], 100)
+        .record_client_ops("inst-X", vec![op_a], 100)
         .unwrap();
 
     // Client B edits same block, same instance
-    let op_b = TextOpId {
-        id: "seq-b1#client-B".to_string(),
-    };
+    let op_b = "seq-b1#client-B";
     store
-        .record_client_ops("inst-X", vec![op_b.clone()], 100)
+        .record_client_ops("inst-X", vec![op_b], 100)
         .unwrap();
 
     // Both ops in DB
-    assert!(store.is_op_applied("inst-X", &op_a.id).unwrap());
-    assert!(store.is_op_applied("inst-X", &op_b.id).unwrap());
+    assert!(store.is_op_applied("inst-X", op_a).unwrap());
+    assert!(store.is_op_applied("inst-X", op_b).unwrap());
 
     // Placement recorded for both syncs
     let instances_100 = store.instances_in(&[100]).unwrap();
@@ -204,8 +200,8 @@ fn test_multi_client_sync_end_to_end() {
     assert_eq!(instances_100[0], "inst-X");
 
     // Client C catches up: sees both ops
-    assert!(store.is_op_applied("inst-X", &op_a.id).unwrap());
-    assert!(store.is_op_applied("inst-X", &op_b.id).unwrap());
+    assert!(store.is_op_applied("inst-X", op_a).unwrap());
+    assert!(store.is_op_applied("inst-X", op_b).unwrap());
 }
 
 #[test]
@@ -215,22 +211,20 @@ fn test_multi_client_offline_resend() {
     let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
 
     // Client A edits, goes offline, comes back
-    let op = TextOpId {
-        id: "seq-1#client-A".to_string(),
-    };
+    let op = "seq-1#client-A";
 
     // First sync
-    store.record_client_ops("inst-Y", vec![op.clone()], 200).unwrap();
+    store.record_client_ops("inst-Y", vec![op], 200).unwrap();
 
     // Offline: retries 4 more times (network unreliable)
     for _ in 0..4 {
         store
-            .record_client_ops("inst-Y", vec![op.clone()], 200)
+            .record_client_ops("inst-Y", vec![op], 200)
             .unwrap();
     }
 
     // Verify: only 1 entry in dedup table
-    assert!(store.is_op_applied("inst-Y", &op.id).unwrap());
+    assert!(store.is_op_applied("inst-Y", op).unwrap());
 
     // Placement idempotent: still block 200
     let instances_200 = store.instances_in(&[200]).unwrap();
@@ -248,19 +242,15 @@ fn test_split_with_concurrent_edits() {
     let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
 
     // Both clients edit instance before split
-    let op_a = TextOpId {
-        id: "seq-a1#client-A".to_string(),
-    };
-    let op_b = TextOpId {
-        id: "seq-b1#client-B".to_string(),
-    };
+    let op_a = "seq-a1#client-A";
+    let op_b = "seq-b1#client-B";
 
     // Both clients record ops in block 300
     store
-        .record_client_ops("inst-paragraph", vec![op_a.clone()], 300)
+        .record_client_ops("inst-paragraph", vec![op_a], 300)
         .unwrap();
     store
-        .record_client_ops("inst-paragraph", vec![op_b.clone()], 300)
+        .record_client_ops("inst-paragraph", vec![op_b], 300)
         .unwrap();
 
     // Paragraph split: block 300 → blocks 300 + 500
@@ -276,8 +266,8 @@ fn test_split_with_concurrent_edits() {
     assert_eq!(instances_500[0], "inst-paragraph");
 
     // No ops lost: both still in dedup
-    assert!(store.is_op_applied("inst-paragraph", &op_a.id).unwrap());
-    assert!(store.is_op_applied("inst-paragraph", &op_b.id).unwrap());
+    assert!(store.is_op_applied("inst-paragraph", op_a).unwrap());
+    assert!(store.is_op_applied("inst-paragraph", op_b).unwrap());
 }
 
 #[test]
@@ -319,10 +309,10 @@ fn test_join_instances_op() {
 
     // Add ops to each instance (simulating edits)
     store
-        .mark_ops_applied("inst-para-1", vec![TextOpId { id: "op-1a".to_string() }])
+        .mark_ops_applied("inst-para-1", vec!["op-1a"])
         .unwrap();
     store
-        .mark_ops_applied("inst-para-2", vec![TextOpId { id: "op-2a".to_string() }])
+        .mark_ops_applied("inst-para-2", vec!["op-2a"])
         .unwrap();
 
     // User joins: paragraphs merge → para-2 stays, para-1 ops move to para-2
@@ -374,10 +364,10 @@ fn test_join_idempotent() {
     store.record_placement("inst-para-2", 200).unwrap();
 
     store
-        .mark_ops_applied("inst-para-1", vec![TextOpId { id: "op-1".to_string() }])
+        .mark_ops_applied("inst-para-1", vec!["op-1"])
         .unwrap();
     store
-        .mark_ops_applied("inst-para-2", vec![TextOpId { id: "op-2".to_string() }])
+        .mark_ops_applied("inst-para-2", vec!["op-2"])
         .unwrap();
 
     // Join twice: idempotent

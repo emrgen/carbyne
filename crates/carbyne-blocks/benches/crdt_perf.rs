@@ -1,6 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use carbyne_blocks::BlockStore;
-use carbyne_blocks::TextOpId;
 use carbyne::Doc;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -17,10 +16,8 @@ fn benchmark_mark_ops_applied(c: &mut Criterion) {
         b.iter_batched(
             setup_store,
             |(store, _dir, _doc)| {
-                let ops: Vec<TextOpId> = (0..100)
-                    .map(|i| TextOpId {
-                        id: format!("seq-{}#client-A", i),
-                    })
+                let ops: Vec<String> = (0..100)
+                    .map(|i| format!("seq-{}#client-A", i))
                     .collect();
                 store.mark_ops_applied("inst-X", black_box(ops)).unwrap();
             },
@@ -32,10 +29,8 @@ fn benchmark_mark_ops_applied(c: &mut Criterion) {
         b.iter_batched(
             setup_store,
             |(store, _dir, _doc)| {
-                let ops: Vec<TextOpId> = (0..1000)
-                    .map(|i| TextOpId {
-                        id: format!("seq-{}#client-A", i),
-                    })
+                let ops: Vec<String> = (0..1000)
+                    .map(|i| format!("seq-{}#client-A", i))
                     .collect();
                 store.mark_ops_applied("inst-X", black_box(ops)).unwrap();
             },
@@ -47,10 +42,8 @@ fn benchmark_mark_ops_applied(c: &mut Criterion) {
         b.iter_batched(
             setup_store,
             |(store, _dir, _doc)| {
-                let ops: Vec<TextOpId> = (0..10000)
-                    .map(|i| TextOpId {
-                        id: format!("seq-{}#client-A", i),
-                    })
+                let ops: Vec<String> = (0..10000)
+                    .map(|i| format!("seq-{}#client-A", i))
                     .collect();
                 store.mark_ops_applied("inst-X", black_box(ops)).unwrap();
             },
@@ -62,32 +55,28 @@ fn benchmark_mark_ops_applied(c: &mut Criterion) {
 fn benchmark_is_op_applied(c: &mut Criterion) {
     c.bench_function("is_op_applied_after_100_inserts", |b| {
         let (store, _dir, _doc) = setup_store();
-        let ops: Vec<TextOpId> = (0..100)
-            .map(|i| TextOpId {
-                id: format!("seq-{}#client-A", i),
-            })
+        let ops: Vec<String> = (0..100)
+            .map(|i| format!("seq-{}#client-A", i))
             .collect();
         store.mark_ops_applied("inst-Y", ops.clone()).unwrap();
 
         b.iter(|| {
             for op in &ops {
-                let _ = store.is_op_applied("inst-Y", &op.id).unwrap();
+                let _ = store.is_op_applied("inst-Y", op).unwrap();
             }
         });
     });
 
     c.bench_function("is_op_applied_after_1000_inserts", |b| {
         let (store, _dir, _doc) = setup_store();
-        let ops: Vec<TextOpId> = (0..1000)
-            .map(|i| TextOpId {
-                id: format!("seq-{}#client-A", i),
-            })
+        let ops: Vec<String> = (0..1000)
+            .map(|i| format!("seq-{}#client-A", i))
             .collect();
         store.mark_ops_applied("inst-Y", ops.clone()).unwrap();
 
         b.iter(|| {
             for op in &ops {
-                let _ = store.is_op_applied("inst-Y", &op.id).unwrap();
+                let _ = store.is_op_applied("inst-Y", op).unwrap();
             }
         });
     });
@@ -158,9 +147,7 @@ fn benchmark_resend_dedup(c: &mut Criterion) {
         b.iter_batched(
             setup_store,
             |(store, _dir, _doc)| {
-                let ops = vec![TextOpId {
-                    id: "seq-1#client-A".to_string(),
-                }];
+                let ops = vec!["seq-1#client-A"];
 
                 // Insert same op 5 times (simulates resends)
                 for _ in 0..5 {
@@ -173,9 +160,7 @@ fn benchmark_resend_dedup(c: &mut Criterion) {
 
     c.bench_function("resend_dedup_verification_5x", |b| {
         let (store, _dir, _doc) = setup_store();
-        let ops = vec![TextOpId {
-            id: "seq-1#client-A".to_string(),
-        }];
+        let ops = vec!["seq-1#client-A"];
 
         store.mark_ops_applied("inst-Z", ops.clone()).unwrap();
 

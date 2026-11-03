@@ -88,7 +88,7 @@ impl BlockStore {
                 first_seen_at INTEGER NOT NULL,
                 PRIMARY KEY(instance_id, op_id)
             );
-            CREATE INDEX IF NOT EXISTS idx_text_op_dedup_instance ON text_op_dedup(instance_id);
+            DROP INDEX IF EXISTS idx_text_op_dedup_instance;
 
             CREATE TABLE IF NOT EXISTS crdt_instance_placements (
                 instance_id TEXT NOT NULL,
@@ -138,10 +138,7 @@ impl BlockStore {
         let mut db = self.db.lock().unwrap();
         let tx = db.transaction()?;
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
+        let now = now();
 
         for block_id in dirty_indices {
             if let Some(block_type) = root.get(block_id) {
@@ -387,10 +384,7 @@ impl BlockStore {
         let current_version = self.doc.version();
         let mut db = self.db.lock().unwrap();
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
+        let now = now();
 
         db.execute("DELETE FROM blocks", [])?;
         let tx = db.transaction()?;
@@ -414,56 +408,49 @@ impl BlockStore {
         Ok(())
     }
 
-    /// Mark operations as applied for dedup
-    /// op_id format: "{id_seq}#{id_site}" (composite unique ID)
-    pub fn mark_ops_applied(&self, instance_id: &str, ops: Vec<TextOpId>) -> Result<()> {
+    /// Mark operations as applied for dedup. One txn, one prepared statement.
+    /// op_id format: "{id_seq}#{id_site}" (composite unique ID). Idempotent.
+    pub fn mark_ops_applied<I, S>(&self, instance_id: &str, ops: I) -> Result<()>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         let db = self.db.lock().unwrap();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-
-        for op in ops {
-            db.execute(
-                "INSERT OR IGNORE INTO text_op_dedup (instance_id, op_id, first_seen_at)
-                 VALUES (?, ?, ?)",
-                params![instance_id, &op.id, now],
-            ).ok();
+        let now = now();
+        let tx = db.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT OR IGNORE INTO text_op_dedup (instance_id, op_id, first_seen_at) VALUES (?, ?, ?)",
+            )?;
+            for op in ops {
+                stmt.execute(params![instance_id, op.as_ref(), now])?;
+            }
         }
+        tx.commit()?;
         Ok(())
     }
-    /// Mark a single text operation as applied (convenience wrapper)
-    /// Idempotent: marking twice is safe (INSERT OR IGNORE)
+
+    /// Mark a single text operation as applied.
     pub fn mark_text_op(&self, instance_id: &str, op_id: &str) -> Result<()> {
-        self.mark_ops_applied(instance_id, vec![TextOpId { id: op_id.to_string() }])
+        self.mark_ops_applied(instance_id, [op_id])
     }
 
 
     /// Check if operation was already applied (for dedup)
     pub fn is_op_applied(&self, instance_id: &str, op_id: &str) -> Result<bool> {
         let db = self.db.lock().unwrap();
-        let exists = db.query_row(
-            "SELECT 1 FROM text_op_dedup WHERE instance_id = ? AND op_id = ?",
-            params![instance_id, op_id],
-            |_| Ok(true),
-        ).optional()?;
-        Ok(exists.unwrap_or(false))
+        let mut stmt = db.prepare_cached("SELECT 1 FROM text_op_dedup WHERE instance_id = ? AND op_id = ?")?;
+        Ok(stmt.exists(params![instance_id, op_id])?)
     }
 
     /// Record that instance_id was placed in block_id
     /// Used for split/join tracking
     pub fn record_placement(&self, instance_id: &str, block_id: usize) -> Result<()> {
         let db = self.db.lock().unwrap();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-
-        db.execute(
-            "INSERT OR IGNORE INTO crdt_instance_placements (instance_id, block_id, placed_at)
-             VALUES (?, ?, ?)",
-            params![instance_id, block_id, now],
-        )?;
+        db.prepare_cached(
+            "INSERT OR IGNORE INTO crdt_instance_placements (instance_id, block_id, placed_at) VALUES (?, ?, ?)",
+        )?
+        .execute(params![instance_id, block_id, now()])?;
         Ok(())
     }
     /// Split: instance moves from source_block_id to target_block_id
@@ -490,11 +477,7 @@ impl BlockStore {
         target_block_id: usize,
     ) -> Result<()> {
         let db = self.db.lock().unwrap();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-
+        let now = now();
         // 1. Record target instance in target block
         db.execute(
             "INSERT OR IGNORE INTO crdt_instance_placements (instance_id, block_id, placed_at)
@@ -543,64 +526,20 @@ impl BlockStore {
         Ok(instances)
     }
 
-    /// Get operations for an instance (extracted from NText)
-    /// Placeholder: full NText RGA extraction deferred
-    pub fn get_instance_ops(&self, _instance_id: &str) -> Result<Vec<TextOp>> {
-        // Full implementation: fetch block containing instance
-        // Walk NText RGA structure, extract ops
-        // Return Vec<TextOp>
-        Ok(Vec::new())
-    }
-
-    /// Extract ops from NText instance (from materialized text)
-    /// Reconstructs op IDs from NText's implicit RGA structure
-    /// Returns empty vec if instance not found or not NText type
-    pub fn extract_text_ops(&self, instance_id: &str, text: &str) -> Result<Vec<TextOp>> {
-        // ponytail: full RGA extraction deferred to when NText API exposes it
-        // add when: NText gains op_id iterator or export_ops() method
-        // For now: client sends ops explicitly during sync, server dedupes
-        let ops = Vec::new();
-        Ok(ops)
-    }
-
-    /// Rebuild text from stored ops via RGA replay
-    /// Used to verify extracted text matches DB ops
-    /// Also used for catch-up: client reconstructs from op history
-    pub fn rebuild_text(&self, instance_id: &str) -> Result<String> {
-        // Get all ops for this instance
-        let ops = self.get_instance_ops(instance_id)?;
-        
-        if ops.is_empty() {
-            return Ok(String::new());
-        }
-
-        // ponytail: RGA replay algorithm deferred to carbyne integration
-        // add when: client-side RGA interpreter available
-        // For now: return empty (ops stored, reconstruction on client)
-        Ok(String::new())
-    }
-
-    /// Record client ops during sync and mark placements
-    /// Called by client integration layer after sync
-    /// Convenience wrapper: calls mark_ops_applied + record_placement
-    pub fn record_client_ops(&self, instance_id: &str, ops: Vec<TextOpId>, block_id: usize) -> Result<()> {
+    /// Record client ops during sync and mark placement.
+    pub fn record_client_ops<I, S>(&self, instance_id: &str, ops: I, block_id: usize) -> Result<()>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         self.mark_ops_applied(instance_id, ops)?;
-        self.record_placement(instance_id, block_id)?;
-        Ok(())
+        self.record_placement(instance_id, block_id)
     }
 }
 
-/// Minimal op ID for dedup
-#[derive(Clone, Debug)]
-pub struct TextOpId {
-    pub id: String,  // composite: "{id_seq}#{id_site}"
-}
-
-/// Operation extracted from NText
-/// Algorithm-agnostic: server doesn't decode
-#[derive(Clone, Debug)]
-pub struct TextOp {
-    pub instance_id: String,
-    pub op_id: String,  // composite: "{id_seq}#{id_site}"
-    pub content: Vec<u8>,  // opaque payload
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
 }

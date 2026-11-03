@@ -70,29 +70,28 @@ impl SyncDaemon {
 
         match msg.message_type {
             DbMessageType::SyncRequest { since } => {
-                // Peer asks for ops after version `since`
+                // Peer asks for diff after version `since`
                 let since = ClientState::from_bytes(&since)
                     .map_err(|e| format!("parse since: {}", e))?;
-                let ops = self.instance.ops_since(since);
+                let diff = self.instance.diffs_since(since);
+                let diff_bytes = diff.to_bytes();
 
-                // Phase 3.5: Serialize ops to bytes for transmission
-                let ops_bytes = serialize_ops(&ops);
                 if let Some(peer) = self.peers.get(&from) {
                     let _ = peer
                         .send(self.envelope(DbMessageType::SyncResponse {
-                            ops: ops_bytes,
+                            ops: diff_bytes,
                         }))
                         .await;
                 }
             }
             DbMessageType::SyncResponse { ops: ops_bytes }
             | DbMessageType::OpsBroadcast { ops: ops_bytes } => {
-                // Receive ops from peer, merge into local doc
-                let ops = deserialize_ops(&ops_bytes)
-                    .map_err(|e| format!("deserialize ops: {}", e))?;
+                // Receive diff from peer, merge into local doc
+                let diff = carbyne::Diff::from_bytes(&ops_bytes)
+                    .map_err(|e| format!("parse diff: {}", e))?;
                 self.instance
-                    .apply(ops.clone())
-                    .map_err(|e| format!("apply ops: {}", e))?;
+                    .apply(vec![diff])
+                    .map_err(|e| format!("apply diff: {}", e))?;
 
                 // Fan-out to every peer except the sender (gossip)
                 let out = self.envelope(DbMessageType::OpsBroadcast {
@@ -107,17 +106,4 @@ impl SyncDaemon {
         }
         Ok(())
     }
-}
-
-/// Phase 3.5: Placeholder serialization for carbyne::Change ops.
-/// TODO: Implement real carbyne change serialization.
-fn serialize_ops(_ops: &[Op]) -> Vec<u8> {
-    // For now, empty placeholder; real impl uses carbyne codec
-    vec![]
-}
-
-/// Phase 3.5: Placeholder deserialization for ops.
-fn deserialize_ops(_bytes: &[u8]) -> Result<Vec<Op>, String> {
-    // For now, return empty; real impl parses carbyne codec
-    Ok(vec![])
 }
