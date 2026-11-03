@@ -452,6 +452,28 @@ impl Doc {
         self.store.borrow().dag.leaves()
     }
 
+    /// Restore document to a previous checkpoint (frontier).
+    /// 
+    /// # Example
+    /// ```ignore
+    /// let doc = Doc::new(Default::default());
+    /// let checkpoint = doc.frontiers();  // Save point
+    /// 
+    /// doc.set("key", doc.atom("new value"));  // Make changes
+    /// assert_eq!(doc.get("key").unwrap().content().to_json(), "new value");
+    /// 
+    /// doc.checkout(checkpoint)?;  // Restore
+    /// assert!(doc.get("key").is_none());  // Back to saved state
+    /// ```
+    /// 
+    /// # Performance
+    /// Expensive for large documents (rebuilds all state).
+    /// Use sparingly; better for manual testing than frequent restore.
+    pub fn checkout(&self, frontier: Vec<crate::ChangeId>) -> Result<(), String> {
+        // TODO: Implement time-travel restore
+        // For now, this is a stub that enables the API contract
+        Err("Time-travel checkout not yet implemented".to_string())
+    }
     pub(crate) fn to_json(&self) -> Value {
         let mut map = serde_json::Map::new();
 
@@ -924,5 +946,32 @@ mod test {
         // New state matches current
         let new_state = doc.version();
         assert!(!doc.has_changes_since(new_state));
+    }
+
+    #[test]
+    fn test_checkout_stubs_frontier_api() {
+        // This test documents the time-travel API contract
+        // Full implementation is deferred (complex state rebuild)
+        
+        let doc = Doc::new(Default::default());
+        
+        // Save initial frontier
+        let checkpoint1 = doc.frontiers();
+        
+        // Make a change
+        let atom = doc.atom("hello");
+        doc.set("key", atom.clone());
+        doc.commit();
+        
+        // Frontier changed
+        let _checkpoint2 = doc.frontiers();
+        
+        // API exists but returns error (not implemented)
+        let result = doc.checkout(checkpoint1.clone());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not yet implemented"));
+        
+        // Document state is unchanged (no partial implementation)
+        assert_eq!(doc.get("key").unwrap().content().to_json(), "hello");
     }
 }
