@@ -28,6 +28,26 @@ pub struct Diff {
 }
 
 impl Diff {
+    /// Serialize with the v1 codec.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut e = crate::codec_v1::EncoderV1::new();
+        self.encode(&mut e, &mut EncodeContext::default());
+        e.buffer()
+    }
+
+    /// Deserialize from `to_bytes` output.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Diff, String> {
+        let mut d = crate::codec_v1::DecoderV1::try_new(bytes.to_vec())?;
+        Diff::decode(&mut d, &DecodeContext::default())
+    }
+
+    /// true when the diff carries no committed changes
+    pub fn is_empty(&self) -> bool {
+        self.changes.size() == 0
+    }
+}
+
+impl Diff {
     pub(crate) fn has_root(&self) -> bool {
         self.get_root().is_some()
     }

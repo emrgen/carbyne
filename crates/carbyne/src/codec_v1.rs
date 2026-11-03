@@ -138,98 +138,63 @@ pub struct DecoderV1 {
 
 impl DecoderV1 {
     pub fn new(buf: Vec<u8>) -> Self {
-        let mut d = Self { buf, pos: 0 };
-
-        if d.u8().unwrap() != VERSION {
-            panic!("decoder: invalid version");
-        }
-
-        // println!("buffer: {:?}", d.buf);
-
-        d
+        Self::try_new(buf).expect("decoder: invalid version")
     }
 
-    fn ensure_capacity(&mut self, size: usize) {
-        // println!("size: {}, pos: {}, len: {}", size, self.pos, self.buf.len());
-        if self.pos + size > self.buf.len() {
-            panic!("decoder: out of bounds");
+    /// Fallible constructor for untrusted bytes (network, disk).
+    pub fn try_new(buf: Vec<u8>) -> Result<Self, String> {
+        let mut d = Self { buf, pos: 0 };
+        if d.u8()? != VERSION {
+            return Err("decoder: invalid version".into());
         }
+        Ok(d)
+    }
+
+    fn take(&mut self, size: usize) -> Result<&[u8], String> {
+        let end = self.pos.checked_add(size).filter(|&e| e <= self.buf.len());
+        let Some(end) = end else {
+            return Err("decoder: out of bounds".into());
+        };
+        let value = &self.buf[self.pos..end];
+        self.pos = end;
+        Ok(value)
     }
 }
 
 impl Decoder for DecoderV1 {
     fn u8(&mut self) -> Result<u8, String> {
-        self.ensure_capacity(1);
-        let value = self.buf[self.pos];
-        self.pos += 1;
-        Ok(value)
+        Ok(self.take(1)?[0])
     }
 
     fn u16(&mut self) -> Result<u16, String> {
-        self.ensure_capacity(2);
-        let value = u16::from_be_bytes([self.buf[self.pos], self.buf[self.pos + 1]]);
-        self.pos += 2;
-        Ok(value)
+        Ok(u16::from_be_bytes(self.take(2)?.try_into().unwrap()))
     }
 
     fn u32(&mut self) -> Result<u32, String> {
-        self.ensure_capacity(4);
-        let value = u32::from_be_bytes([
-            self.buf[self.pos],
-            self.buf[self.pos + 1],
-            self.buf[self.pos + 2],
-            self.buf[self.pos + 3],
-        ]);
-        self.pos += 4;
-        Ok(value)
+        Ok(u32::from_be_bytes(self.take(4)?.try_into().unwrap()))
     }
 
     fn u64(&mut self) -> Result<u64, String> {
-        self.ensure_capacity(8);
-        let value = u64::from_be_bytes([
-            self.buf[self.pos],
-            self.buf[self.pos + 1],
-            self.buf[self.pos + 2],
-            self.buf[self.pos + 3],
-            self.buf[self.pos + 4],
-            self.buf[self.pos + 5],
-            self.buf[self.pos + 6],
-            self.buf[self.pos + 7],
-        ]);
-        self.pos += 8;
-        Ok(value)
+        Ok(u64::from_be_bytes(self.take(8)?.try_into().unwrap()))
     }
 
     fn uuid(&mut self) -> Result<[u8; 16], String> {
-        self.ensure_capacity(16);
-        let mut value = [0; 16];
-        value.copy_from_slice(&self.buf[self.pos..self.pos + 16]);
-        self.pos += 16;
-        Ok(value)
+        Ok(self.take(16)?.try_into().unwrap())
     }
 
     fn string(&mut self) -> Result<String, String> {
         let len = self.u32()? as usize;
-        self.ensure_capacity(len);
-        let value = String::from_utf8(self.buf[self.pos..self.pos + len].to_vec())
-            .map_err(|_| "decoder: invalid utf8 string".to_string())?;
-        self.pos += len;
-        Ok(value)
+        String::from_utf8(self.take(len)?.to_vec())
+            .map_err(|_| "decoder: invalid utf8 string".to_string())
     }
 
     fn bytes(&mut self) -> Result<Vec<u8>, String> {
         let len = self.u32()? as usize;
-        self.ensure_capacity(len);
-        let value = self.buf[self.pos..self.pos + len].to_vec();
-        self.pos += len;
-        Ok(value)
+        Ok(self.take(len)?.to_vec())
     }
 
     fn slice(&mut self, len: usize) -> Result<&[u8], String> {
-        self.ensure_capacity(len);
-        let value = &self.buf[self.pos..self.pos + len];
-        self.pos += len;
-        Ok(value)
+        self.take(len)
     }
 
     fn item(&mut self, ctx: &DecodeContext) -> Result<ItemData, String> {

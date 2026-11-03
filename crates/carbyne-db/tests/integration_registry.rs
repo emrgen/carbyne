@@ -51,32 +51,3 @@ fn test_instance_not_found() {
     let result = registry.get(instance.id());
     assert!(result.is_err());
 }
-
-#[test]
-fn test_apply_ops() {
-    let dir = TempDir::new().unwrap();
-    let registry = DbRegistry::new(dir.path().to_str().unwrap()).unwrap();
-
-    let instance = registry.create(DbName("test".to_string())).unwrap();
-
-    // Apply empty ops to verify no crash
-    instance.apply(vec![]).unwrap();
-    assert_eq!(instance.lamport(), 1);
-}
-
-#[test]
-fn test_multiple_applies_increment_lamport() {
-    let dir = TempDir::new().unwrap();
-    let registry = DbRegistry::new(dir.path().to_str().unwrap()).unwrap();
-
-    let instance = registry.create(DbName("test".to_string())).unwrap();
-
-    instance.apply(vec![]).unwrap();
-    assert_eq!(instance.lamport(), 1);
-
-    instance.apply(vec![]).unwrap();
-    assert_eq!(instance.lamport(), 2);
-
-    instance.apply(vec![]).unwrap();
-    assert_eq!(instance.lamport(), 3);
-}

@@ -1,82 +1,87 @@
-use carbyne_db::{DbName, DbRegistry};
-use carbyne_db::sync::{DbMessage, DbMessageType};
+use carbyne::{ClientState, Content};
+use carbyne_db::sync::{DbMessage, DbMessageType, Inbound, SyncDaemon};
+use carbyne_db::{DbInstance, DbName, DbRegistry};
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 
+fn get(db: &DbInstance, k: &str) -> Option<Content> {
+    db.doc().get(k).map(|t| t.content())
+}
+
+fn put(db: &DbInstance, k: &str, v: &str) {
+    let doc = db.doc();
+    doc.set(k, doc.atom(v));
+    drop(doc);
+    db.commit().unwrap();
+}
+
+/// a edits; b sends SyncRequest with its version; a replies SyncResponse;
+/// b applies it; b's doc now matches and the diff is on b's tail.
 #[tokio::test]
-async fn test_two_instances_peer_connection() {
-    let dir1 = TempDir::new().unwrap();
-    let dir2 = TempDir::new().unwrap();
+async fn test_sync_request_response_round_trip() {
+    let d1 = TempDir::new().unwrap();
+    let d2 = TempDir::new().unwrap();
+    let r1 = DbRegistry::new(d1.path().to_str().unwrap()).unwrap();
+    let r2 = DbRegistry::new(d2.path().to_str().unwrap()).unwrap();
+    let a = r1.create(DbName("x".into())).unwrap();
+    let b = r2
+        .create_from(DbName("x".into()), &a.diff_since(ClientState::default()))
+        .unwrap();
 
-    let registry1 = DbRegistry::new(dir1.path().to_str().unwrap()).unwrap();
-    let registry2 = DbRegistry::new(dir2.path().to_str().unwrap()).unwrap();
+    let (daemon_a, _tx_a) = SyncDaemon::new(a.clone());
+    let (daemon_b, _tx_b) = SyncDaemon::new(b.clone());
+    // b's mailbox, as seen by a
+    let (b_tx, mut b_rx) = mpsc::channel::<DbMessage>(8);
+    daemon_a.add_peer("b".into(), b_tx);
+    assert_eq!(daemon_a.peer_count(), 1);
 
-    let db1 = registry1.create(DbName("test".to_string())).unwrap();
-    let db2 = registry2.create(DbName("test".to_string())).unwrap();
+    put(&a, "k", "v");
 
-    // Create mock peer channels
-    let (peer1_tx, mut peer1_rx) = mpsc::channel::<DbMessage>(10);
-    let (peer2_tx, mut peer2_rx) = mpsc::channel::<DbMessage>(10);
+    daemon_a
+        .handle_message(Inbound {
+            from: "b".into(),
+            msg: DbMessage {
+                db_id: b.id(),
+                version: b.version().to_bytes(),
+                message_type: DbMessageType::SyncRequest {
+                    since: b.version().to_bytes(),
+                },
+            },
+        })
+        .await
+        .unwrap();
 
-    // In real implementation, spawn sync daemons and connect
-    // For Phase 3: just verify channels work
-    assert_ne!(db1.id(), db2.id());
-    assert_eq!(db1.name(), db2.name());
+    let reply = b_rx.recv().await.unwrap();
+    assert!(matches!(reply.message_type, DbMessageType::SyncResponse { .. }));
+    daemon_b
+        .handle_message(Inbound {
+            from: "a".into(),
+            msg: reply,
+        })
+        .await
+        .unwrap();
 
-    // Send a message through the channel
-    let msg = DbMessage {
-        db_id: db1.id(),
-        lamport: 1,
-        message_type: DbMessageType::SyncRequest { peer_lamport: 0 },
-    };
-
-    peer1_tx.send(msg.clone()).await.unwrap();
-    let received = peer1_rx.recv().await;
-    assert!(received.is_some());
+    assert_eq!(get(&b, "k"), Some(Content::String("v".into())));
+    assert_eq!(b.seq(), 1);
+    assert!(a.diff_since(b.version()).is_empty());
 }
 
 #[tokio::test]
-async fn test_sync_request_response() {
-    let dir = TempDir::new().unwrap();
-    let registry = DbRegistry::new(dir.path().to_str().unwrap()).unwrap();
-
-    let db = registry.create(DbName("test".to_string())).unwrap();
-
-    let request = DbMessage {
-        db_id: db.id(),
-        lamport: 0,
-        message_type: DbMessageType::SyncRequest { peer_lamport: 0 },
-    };
-
-    // Phase 3: would spawn daemon and send request
-    // For now, just verify message construction
-    assert_eq!(request.db_id, db.id());
-    assert_eq!(request.lamport, 0);
-
-    match request.message_type {
-        DbMessageType::SyncRequest { peer_lamport } => {
-            assert_eq!(peer_lamport, 0);
-        }
-        _ => panic!("Wrong message type"),
-    }
-}
-
-#[tokio::test]
-async fn test_ops_broadcast_message() {
-    let dir = TempDir::new().unwrap();
-    let registry = DbRegistry::new(dir.path().to_str().unwrap()).unwrap();
-
-    let db = registry.create(DbName("test".to_string())).unwrap();
-
-    let broadcast = DbMessage {
-        db_id: db.id(),
-        lamport: 1,
-        message_type: DbMessageType::OpsBroadcast {
-            ops: vec![],
-            lamport: 1,
-        },
-    };
-
-    assert_eq!(broadcast.db_id, db.id());
-    assert_eq!(broadcast.lamport, 1);
+async fn test_malformed_payload_is_error_not_panic() {
+    let d = TempDir::new().unwrap();
+    let r = DbRegistry::new(d.path().to_str().unwrap()).unwrap();
+    let a = r.create(DbName("x".into())).unwrap();
+    let (daemon, _tx) = SyncDaemon::new(a.clone());
+    let res = daemon
+        .handle_message(Inbound {
+            from: "p".into(),
+            msg: DbMessage {
+                db_id: a.id(),
+                version: vec![],
+                message_type: DbMessageType::OpsBroadcast { diff: vec![1, 2, 3] },
+            },
+        })
+        .await;
+    assert!(res.is_err());
+    assert_eq!(a.seq(), 0, "nothing persisted");
 }

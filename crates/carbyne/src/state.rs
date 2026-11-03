@@ -251,6 +251,21 @@ impl Add<&ClientState> for &ClientState {
     }
 }
 
+impl ClientState {
+    /// Serialize with the v1 codec.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut e = crate::codec_v1::EncoderV1::new();
+        self.encode(&mut e, &mut EncodeContext::default());
+        e.buffer()
+    }
+
+    /// Deserialize from `to_bytes` output.
+    pub fn from_bytes(bytes: &[u8]) -> Result<ClientState, String> {
+        let mut d = crate::codec_v1::DecoderV1::try_new(bytes.to_vec())?;
+        ClientState::decode(&mut d, &DecodeContext::default())
+    }
+}
+
 impl Serialize for ClientState {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

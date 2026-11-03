@@ -2,6 +2,7 @@ use crate::changelog::ChangeLog;
 use crate::error::{DbError, Result};
 use crate::instance::{DbId, DbInstance, DbName};
 use crate::storage::Storage;
+use carbyne::Diff;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -46,10 +47,27 @@ impl DbRegistry {
 
         Ok(())
     }
+    /// Create a fresh, empty db.
     pub fn create(&self, name: DbName) -> Result<Arc<DbInstance>> {
+        let n = name.clone();
+        self.register(name, |id, log| DbInstance::new(id, n, log))
+    }
+
+    /// Create a db seeded from a peer's full diff (`doc.diff(ClientState::default())`).
+    /// Required before incremental sync: diffs only apply to a doc with the same identity.
+    pub fn create_from(&self, name: DbName, snapshot: &Diff) -> Result<Arc<DbInstance>> {
+        let n = name.clone();
+        self.register(name, |id, log| DbInstance::from_snapshot(id, n, log, snapshot))
+    }
+
+    fn register(
+        &self,
+        name: DbName,
+        build: impl FnOnce(DbId, Arc<ChangeLog>) -> Result<DbInstance>,
+    ) -> Result<Arc<DbInstance>> {
         let id = DbId::new();
         let changelog = Arc::new(ChangeLog::new(id, self.storage.clone()));
-        let instance = Arc::new(DbInstance::new(id, name.clone(), changelog));
+        let instance = Arc::new(build(id, changelog)?);
 
         // Save metadata
         let metadata = DbMetadata {

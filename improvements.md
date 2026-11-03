@@ -30,20 +30,20 @@ Summary: cbdocs design is sound and matches this audit. The crate that was suppo
 | #  | Problem                                                                    | Evidence                                                      | Impact                                                                                                           |
 | -- | -------------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | 1  | `dirty_blocks()` ignored `changed_since`, returned all root blocks         | `doc.rs:177-182` (old)                                        | N row rewrites per edit. **DONE**, see below.                                                                    |
-| 2  | carbyne-db `apply()`: read whole log, rewrite, then snapshot+delete per op | `changelog.rs:34-43,57-62`, `instance.rs:76-90`               | 3 durable writes/op, log read ∝ batch size. Must become append-only + periodic snapshot.                         |
+| 2  | carbyne-db `apply()`: read whole log, rewrite, then snapshot+delete per op | `changelog.rs:34-43,57-62`, `instance.rs:76-90` (old)         | 3 durable writes/op, log read ∝ batch size. **DONE**, see below.                                                 |
 | 3  | No tombstone GC                                                            | `item.rs:178-184`, `store.rs:686-698`                         | Monotonic growth. Tier 1 done.                                                                                   |
 | 4  | No CRDT persistence anywhere                                               | `persist.rs:41-45`, `diffstore.rs:35-39`, `changelog.rs:8,47` | All docs resident. RAM is the bill (`db/cost` §Resident memory: 10k docs × 2 MiB = 20 GiB vs 200 MiB hot cache). |
 | 5  | Archive pipeline is a stub                                                 | `archive_job.rs:153-164`, `s3_backend.rs:69-76`               | No cold tier.                                                                                                    |
 | 6  | `blocks.version` = bincode `ClientState` per row                           | `carbyne-blocks/src/lib.rs:230`                               | 8·C bytes × N rows.                                                                                              |
 | 7  | Per-row `SELECT 1` then INSERT/UPDATE                                      | `lib.rs:98-111`                                               | 2× statements.                                                                                                   |
 | 8  | No `journal_mode=WAL` / `synchronous=NORMAL`                               | `lib.rs:60-71`, `storage.rs:29-51`                            | fsync per txn.                                                                                                   |
-| 9  | Fixed-width uncompressed codec; `Diff` round-trip panics                   | `codec_v1.rs:64-90,155`                                       | 3–5× egress; cannot persist as-is.                                                                               |
+| 9  | Fixed-width uncompressed codec; `Diff` round-trip panics                   | `codec_v1.rs:64-90,155` (old)                                 | 3–5× egress. Round-trip + panic **DONE**, see below. Varints not done.                                           |
 | 10 | `Content::Types`/`Embed` encode nothing                                    | `item.rs:1337-1342`                                           | Silent data loss. Blocks GC tier ≥2 and any disk format.                                                         |
 | 11 | `diff()` scans all items + changes per client                              | `store.rs:1100-1116`, `change.rs:458-475`                     | O(history) per sync. perf P0.                                                                                    |
-| 12 | carbyne-db lamport `u64` instead of VV                                     | `instance.rs`, `message.rs`                                   | Cannot express per-actor coverage; dedup (CAVEATS §8) unsolvable with it.                                        |
+| 12 | carbyne-db lamport `u64` instead of VV                                     | `instance.rs`, `message.rs` (old)                             | **DONE** with #2: `DbInstance::version() -> ClientState`, wire carries `ClientState::to_bytes()`.                |
 
 Pre-existing, found while implementing, not fixed:
-- `Diff` wire round-trip panics `decoder: out of bounds` (`codec_v1.rs:155`) for any committed change. `diff.rs::test_encode_decode_diff` only covers uncommitted root fields.
+- ~~`Diff` wire round-trip panics~~ fixed under #9.
 - Remote deletes never applied: `tx.rs:174-183` shadowed `store`. **Fixed** as a prerequisite for tier 1.
 - `carbyne-blocks` does not compile on HEAD (`E0062` duplicate fields, 10 errors).
 
@@ -103,14 +103,41 @@ Docs updated: `README.md`, `crates/carbyne/README.md`, `crates/carbyne-blocks/RE
 
 Ceiling: `IBTree::index_of` is `range(..).count()` (`index/ibtree.rs:33`), O(position) per lookup. Fine at 10k; perf P1 rank/select index fixes it if lists get very large.
 
+## #9 `Diff` codec round-trip (DONE)
+
+Files: `crates/carbyne/src/codec_v1.rs`, `change.rs`, `diff.rs`, `state.rs`.
+
+- `encode_item`/`decode_item` disagreed: decoder read `target`/`mover` that encoder never wrote, `parent_id` was unconditional on one side and flag-gated on the other, `side` read 8 bits for a 2-bit field. Now symmetric; `parent_id` gated by flag bit 6, `side` masked `& 0b11`.
+- `ChangeStore::encode` wrote the total change count then encoded only committed ones → decoder read past the buffer. Now writes `map.len()`.
+- `DecoderV1` panicked on short/garbage input (`out of bounds`, `invalid version`). Now `try_new` + bounds-checked `take()` return `Err`; `Diff::from_bytes`/`ClientState::from_bytes` use it. Network bytes can no longer crash the process.
+- Added `Diff::to_bytes/from_bytes`, `ClientState::to_bytes/from_bytes`.
+
+Tests: `diff::test::test_encode_decode_diff` (now covers committed list+delete), `carbyne-db/tests/integration_sync.rs::test_malformed_payload_is_error_not_panic`.
+
+## #2 carbyne-db append-only log + snapshot (DONE)
+
+Files: `crates/carbyne-db/src/changelog.rs`, `instance.rs`, `registry.rs`, `sync/{message,daemon,mod}.rs`.
+
+Keys per db: `tail:{db}:{seq:020}` = one `Diff` per commit; `snap:{db}` = full `Diff` (`doc.diff(ClientState::default())`); `snap:{db}:seq`.
+
+- `DbInstance::commit()`: `doc.commit()`, diff since last persisted version, one `put`. Empty diff → no write. `apply(&Diff)`: put then mutate (durability before visibility).
+- Every `SNAPSHOT_EVERY = 64` appends: write full snapshot, delete tail ≤ seq. `load()` = `Doc::from(snapshot)` + replay tail. Genesis snapshot written on create so replay rebuilds the same root/client identity (a `Doc::default()` has a fresh id; applying tail diffs to it silently drops everything).
+- `DbRegistry::create_from(name, &full_diff)`: bootstrap a peer replica with the same doc identity, fresh client id. Required before incremental sync.
+- Lamport removed (#12). `version() -> ClientState`, `diff_since(ClientState)`, `seq()` is tail position only.
+- Wire (`DbMessage`): `version: Vec<u8>`, `SyncRequest{since}`, `SyncResponse{diff}`, `OpsBroadcast{diff}`, all carbyne v1 codec bytes. Daemon: request → `diff_since` → response; response/broadcast → `apply` → fan-out to other peers. Malformed payload → `Err`, loop continues.
+
+Tests: `carbyne-db/tests/integration_durability.rs` (`test_snapshot_compacts_tail_and_restart_matches`: 70 commits → tail_len 6, restart equal; `test_apply_remote_diff_persists_and_syncs`), `integration_sync.rs::test_sync_request_response_round_trip`.
+
+Ceiling: snapshot is a full `diff()` (#11 cost); `tail_len()` iterates keys; no ack tracking so tail can only be compacted by snapshot, not by peer coverage. Those are #11 and GC tier 2 prerequisites.
+
 ## Next steps, in cost order
 
 Reconciled with `perf/README.md` §Recommended work order and `db/README.md` §Initial implementation policy.
 
 1. ~~**#1** `dirty_blocks`~~ done.
 2. **#8 + #7** WAL pragma + upsert in carbyne-blocks. Config-level.
-3. **#2** carbyne-db `apply()`: append-only (key per `(db_id, actor, clock_start)`, no read-modify-write), snapshot on threshold not per op. Switch lamport → `ClientState` (#12). This is the first real step of `db/README.md` "Store retained operations as actor-local immutable blocks."
-4. **#9 + #10** Fix `Diff` round-trip panic and `Types`/`Embed` encoding. Then varints. Until this, there is no persistable format.
+3. ~~**#2** carbyne-db append-only + `ClientState` (#12)~~ done.
+4. ~~**#9** `Diff` round-trip~~ done. **#10** `Types`/`Embed` encoding, then varints, still open.
 5. **#11** Range-select in `ItemStore::diff` / `ChangeStore::diff` (perf P0). Use `IdRangeMap` (`persist.rs:29`) as the index.
 6. **#4** Persist `DocStoreData` snapshot + op tail; hot-doc cache with eviction. Unlocks the 20 GiB → 200 MiB RAM claim and GC tier 2/3.
 7. **#5** Delete the fake archive or implement it against the sealed-block design.
