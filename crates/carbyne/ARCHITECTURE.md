@@ -26,3 +26,5 @@ list.insert(0, doc.atom("before"));
 Insertion is not a substitute for moving existing items. Existing `Type::move_to`, `move_before`, and `move_after` preserve move semantics.
 
 Typed APIs remove unsupported container operations from the generic handle; they do not make text input validation or offset handling compile-time checks. Keep map conflict projection, list indexing, string splitting, marks, and move-target behavior distinct. No trait objects or new storage layer are needed.
+
+Internal `item_ref()` accessors borrow `&ItemRef`; clone explicitly only when an owned handle is required. Typed container extraction still clones shared handles, preserving canonical runtime state.

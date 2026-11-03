@@ -39,9 +39,7 @@ impl NMark {
         1 //marks.len() as u32
     }
 
-    pub(crate) fn item_ref(&self) -> ItemRef {
-        self.item.clone()
-    }
+    pub(crate) fn item_ref(&self) -> &ItemRef { &self.item }
 
     pub(crate) fn to_json(&self) -> Value {
         serde_json::to_value(self.clone()).unwrap()

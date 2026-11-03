@@ -25,7 +25,7 @@ pub struct NList {
 impl NList {
     pub(crate) fn remove_child(&self, child: &Type) {
         self.list.borrow_mut().remove(child);
-        child.item_ref().disconnect();
+        child.item_ref().clone().disconnect();
     }
 
     /// move the item after the target item
@@ -111,9 +111,7 @@ impl NList {
     }
 
     #[inline]
-    pub(crate) fn item_ref(&self) -> ItemRef {
-        self.item.clone()
-    }
+    pub(crate) fn item_ref(&self) -> &ItemRef { &self.item }
 
     #[inline]
     pub(crate) fn index_of(&self, target: &Type) -> i32 {

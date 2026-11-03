@@ -32,9 +32,7 @@ impl NMove {
     }
 
     #[inline]
-    pub(crate) fn item_ref(&self) -> ItemRef {
-        self.item.clone()
-    }
+    pub(crate) fn item_ref(&self) -> &ItemRef { &self.item }
 
     #[inline]
     pub(crate) fn content(&self) -> Content {

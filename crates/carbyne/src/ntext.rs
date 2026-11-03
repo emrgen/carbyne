@@ -135,9 +135,7 @@ impl NText {
         }
     }
 
-    pub(crate) fn item_ref(&self) -> ItemRef {
-        self.item.clone()
-    }
+    pub(crate) fn item_ref(&self) -> &ItemRef { &self.item }
 
     pub(crate) fn to_json(&self) -> serde_json::Value {
         let items = self.borrow().as_list();

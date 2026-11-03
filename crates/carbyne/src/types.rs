@@ -290,7 +290,7 @@ impl Type {
         parent.unwrap().on_insert(&item);
     }
 
-    pub(crate) fn item_ref(&self) -> ItemRef {
+    pub(crate) fn item_ref(&self) -> &ItemRef {
         match self {
             Type::List(n) => n.item_ref(),
             Type::Map(n) => n.item_ref(),
@@ -791,13 +791,13 @@ impl From<ItemRef> for Type {
 impl From<Type> for ItemRef {
     fn from(t: Type) -> Self {
         match t {
-            Type::List(n) => n.item_ref(),
-            Type::Map(n) => n.item_ref(),
-            Type::Text(n) => n.item_ref(),
-            Type::String(n) => n.item_ref(),
-            Type::Atom(n) => n.item_ref(),
-            Type::Move(n) => n.item_ref(),
-            Type::Mark(n) => n.item_ref(),
+            Type::List(n) => n.item_ref().clone(),
+            Type::Map(n) => n.item_ref().clone(),
+            Type::Text(n) => n.item_ref().clone(),
+            Type::String(n) => n.item_ref().clone(),
+            Type::Atom(n) => n.item_ref().clone(),
+            Type::Move(n) => n.item_ref().clone(),
+            Type::Mark(n) => n.item_ref().clone(),
             // Type::Doc(n) => n.root.item_ref(),
             Type::Identity => panic!("Type::into(ItemRef): not implemented"),
         }

@@ -69,9 +69,7 @@ impl NString {
     }
 
     #[inline]
-    pub(crate) fn item_ref(&self) -> ItemRef {
-        self.item.clone()
-    }
+    pub(crate) fn item_ref(&self) -> &ItemRef { &self.item }
 
     pub(crate) fn to_json(&self) -> Value {
         let mut map = serde_json::Map::new();

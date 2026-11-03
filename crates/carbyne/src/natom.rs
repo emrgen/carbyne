@@ -47,9 +47,7 @@ impl NAtom {
     }
 
     #[inline]
-    pub(crate) fn item_ref(&self) -> ItemRef {
-        self.item.clone()
-    }
+    pub(crate) fn item_ref(&self) -> &ItemRef { &self.item }
 
     #[inline]
     pub(crate) fn to_json(&self) -> serde_json::Value {

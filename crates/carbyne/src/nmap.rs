@@ -50,9 +50,7 @@ impl NMap {
         self.item_ref().set_content(content.into());
     }
 
-    pub(crate) fn item_ref(&self) -> ItemRef {
-        self.item.clone()
-    }
+    pub(crate) fn item_ref(&self) -> &ItemRef { &self.item }
 }
 
 impl Deref for NMap {
@@ -107,7 +105,7 @@ impl NMap {
     }
 
     pub(crate) fn remove_child(&self, child: &Type) {
-        child.item_ref().disconnect();
+        child.item_ref().clone().disconnect();
     }
 
     //
