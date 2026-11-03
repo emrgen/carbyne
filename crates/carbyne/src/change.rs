@@ -79,7 +79,7 @@ pub(crate) fn sort_changes(parents: HashMap<ChangeId, Vec<ChangeId>>) -> Vec<Cha
 
 /// Change represents a set of changes made to a document by one client in a single transaction.
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
-pub(crate) struct Change {
+pub struct Change {
     pub(crate) flag: u8,
     pub(crate) id: ChangeId,
     pub(crate) parents: Vec<Change>,

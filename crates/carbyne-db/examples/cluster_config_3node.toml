@@ -1,0 +1,25 @@
+# 3-node cluster configuration for carbyne-db
+# Each node runs this config with its own local_peer_id
+
+# Local node identifier (set to "node-1", "node-2", or "node-3" per instance)
+local_peer_id = "node-1"
+
+# Connection and reconnection settings
+auto_reconnect_interval_secs = 5
+connection_timeout_secs = 10
+
+# Define all peers in the cluster
+[[peers]]
+id = "node-1"
+host = "localhost"
+port = 9001
+
+[[peers]]
+id = "node-2"
+host = "localhost"
+port = 9002
+
+[[peers]]
+id = "node-3"
+host = "localhost"
+port = 9003
