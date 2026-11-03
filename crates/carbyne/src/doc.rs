@@ -985,6 +985,48 @@ mod test {
     }
 
     #[test]
+    fn test_dirty_blocks_only_changed() {
+        let doc = Doc::new(Default::default());
+        let root = doc.list();
+        doc.set("blocks", root.clone());
+        for i in 0..200 {
+            let block = doc.map();
+            block.set("content", doc.string(&format!("Block {}", i)));
+            root.append(block);
+        }
+        doc.commit();
+        let v1 = doc.version();
+        assert!(doc.dirty_blocks(v1.clone()).is_empty());
+
+        // nested edit: block 150's map field
+        if let Some(crate::Type::Map(m)) = root.get(150usize) {
+            m.set("content", doc.string("UPDATED"));
+        }
+        // deeper edit: text inside block 7
+        if let Some(crate::Type::Map(m)) = root.get(7usize) {
+            let text = doc.text();
+            m.set("body", text.clone());
+            doc.append_to_text(&text, "hi");
+        }
+        // delete block 42
+        if let Some(b) = root.get(42usize) {
+            b.delete();
+        }
+        // brand new block at the end
+        root.append(doc.map());
+        doc.commit();
+
+        assert_eq!(doc.dirty_blocks(v1.clone()), vec![7, 42, 150, 200]);
+
+        // state caught up: nothing dirty
+        let v2 = doc.version();
+        assert!(doc.dirty_blocks(v2).is_empty());
+        // default state: everything that was ever touched, deduped
+        let all = doc.dirty_blocks(ClientState::default());
+        assert_eq!(all.len(), 201);
+    }
+
+    #[test]
     fn test_checkout_stubs_frontier_api() {
         // This test documents the time-travel API contract
         // Full implementation is deferred (complex state rebuild)
