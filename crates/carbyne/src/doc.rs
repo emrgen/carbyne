@@ -318,6 +318,41 @@ impl Doc {
 
         string
     }
+    /// Efficiently append text to a text element in a single operation.
+    /// Creates one NString item for the entire input, instead of one per character.
+    /// 
+    /// # Example
+    /// ```ignore
+    /// let text = doc.text();
+    /// doc.set("content", text.clone());
+    /// 
+    /// // Old (5 items for "Hello"):
+    /// // text.append(doc.string("H"));
+    /// // text.append(doc.string("e"));
+    /// // ... etc
+    /// 
+    /// // New (1 item for "Hello"):
+    /// doc.append_to_text(&text, "Hello");
+    /// ```
+    pub fn append_to_text(&self, text: &NText, content: impl Into<String>) {
+        let content_str = content.into();
+        let string = self.string(content_str);
+        text.append(string);
+    }
+
+    /// Efficiently prepend text to a text element in a single operation.
+    pub fn prepend_to_text(&self, text: &NText, content: impl Into<String>) {
+        let content_str = content.into();
+        let string = self.string(content_str);
+        text.prepend(string);
+    }
+
+    /// Insert text at a specific offset in a single operation.
+    pub fn insert_text_at(&self, text: &NText, offset: u32, content: impl Into<String>) {
+        let content_str = content.into();
+        let string = self.string(content_str);
+        text.insert(offset, string);
+    }
 
     /// Create a new change in the document
     pub fn commit(&self) {
@@ -810,5 +845,39 @@ mod test {
         assert_eq!(list.depth(), 1);
         assert_eq!(a1.depth(), 2);
         assert_eq!(a3.depth(), 3);
+    }
+
+    #[test]
+    fn test_batch_text_append() {
+        let doc = Doc::new(Default::default());
+        let text = doc.text();
+        doc.set("text", text.clone());
+
+        // Old way (5 items):
+        let s1 = doc.string("H");
+        let s2 = doc.string("e");
+        let s3 = doc.string("l");
+        let s4 = doc.string("l");
+        let s5 = doc.string("o");
+
+        text.append(s1);
+        text.append(s2);
+        text.append(s3);
+        text.append(s4);
+        text.append(s5);
+
+        assert_eq!(text.text_content(), "Hello");
+        // Count items: should be 5
+        assert_eq!(text.item_ref().borrow().items().len(), 5);
+
+        // New way (1 item with batch):
+        let text2 = doc.text();
+        doc.set("text2", text2.clone());
+        
+        doc.append_to_text(&text2, "Hello");
+        
+        assert_eq!(text2.text_content(), "Hello");
+        // Count items: should be 1
+        assert_eq!(text2.item_ref().borrow().items().len(), 1);
     }
 }
