@@ -126,6 +126,27 @@ impl Doc {
 
         diff
     }
+    /// Get the number of new changes since the given state.
+    /// Useful for detecting if sync is needed without computing full diff.
+    /// 
+    /// # Performance
+    /// O(n) scan (no full Diff construction), good for checking if changes exist.
+    pub fn has_changes_since(&self, state: impl Into<ClientState>) -> bool {
+        let state_ref = state.into();
+        let store = self.store.borrow();
+        
+        // Quick check: iterate changes and break on first mismatch
+        for (client_id, changes) in store.changes.iter() {
+            for change in changes.iter() {
+                let change_id = change.id();
+                // If this change is not in the state, we have new changes
+                if state_ref.state.get(&change_id.client).map_or(true, |clock| clock < &change_id.clock) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
 
     /// Apply a diff to the document from remote client
     pub fn apply(&self, diff: &Diff) {
@@ -879,5 +900,29 @@ mod test {
         assert_eq!(text2.text_content(), "Hello");
         // Count items: should be 1
         assert_eq!(text2.item_ref().borrow().items().len(), 1);
+    }
+
+    #[test]
+    fn test_has_changes_since() {
+        let doc = Doc::new(Default::default());
+        
+        // Initial state
+        let initial_state = doc.version();
+        assert!(!doc.has_changes_since(initial_state.clone()));
+        
+        // Add a change
+        let atom = doc.atom("hello");
+        doc.set("key", atom);
+        
+        // Now we have changes
+        assert!(doc.has_changes_since(initial_state.clone()));
+        
+        // After commit, state still has changes
+        doc.commit();
+        assert!(doc.has_changes_since(initial_state.clone()));
+        
+        // New state matches current
+        let new_state = doc.version();
+        assert!(!doc.has_changes_since(new_state));
     }
 }
