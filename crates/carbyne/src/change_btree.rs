@@ -487,7 +487,7 @@ impl<K: Debug + Ord + Clone + Debug, V: Clone + Debug> BTree<K, V> {
     }
 
     pub(crate) fn contains(&self, key: &K) -> bool {
-        self.contains(key)
+        self.root.contains(key)
     }
 
     pub(crate) fn index_of(&self, key: &K) -> Option<usize> {
@@ -602,6 +602,16 @@ mod tests {
 
         assert_eq!(btree.size(), 3);
         assert!(!btree.is_empty());
+    }
+
+    #[test]
+    fn test_btree_contains() {
+        let mut btree = BTree::new(4);
+        btree.insert(10, "A");
+        btree.insert(20, "B");
+        assert!(btree.contains(&10));
+        assert!(btree.contains(&20));
+        assert!(!btree.contains(&99));
     }
 
     #[test]
