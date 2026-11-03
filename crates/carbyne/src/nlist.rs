@@ -155,6 +155,23 @@ impl NList {
         self.on_insert(&item);
     }
 
+    /// Append multiple items at once (convenience for common pattern).
+    /// 
+    /// # Example
+    /// ```ignore
+    /// let list = doc.list();
+    /// list.append_all(vec![
+    ///     doc.atom("item1"),
+    ///     doc.atom("item2"),
+    ///     doc.atom("item3"),
+    /// ]);
+    /// ```
+    pub fn append_all(&self, items: Vec<Type>) {
+        for item in items {
+            self.append(item);
+        }
+    }
+
     pub fn insert(&self, offset: u32, item: impl Into<Type>) {
         let size = self.list.borrow().size();
         let item = item.into();
@@ -365,5 +382,21 @@ content:
         assert_eq!(yaml, expect);
 
         // println!("{}", serde_yaml::to_string(doc).unwrap());
+    }
+
+    #[test]
+    fn test_append_all() {
+        let doc = crate::doc::Doc::new(Default::default());
+        let list = doc.list();
+        doc.set("list", list.clone());
+        
+        // Batch append
+        list.append_all(vec![
+            doc.atom("a").into(),
+            doc.atom("b").into(),
+            doc.atom("c").into(),
+        ]);
+        
+        assert_eq!(list.size(), 3);
     }
 }

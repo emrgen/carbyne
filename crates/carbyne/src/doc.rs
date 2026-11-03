@@ -691,7 +691,6 @@ impl serde::Serialize for DocId {
 
 #[cfg(test)]
 mod test {
-    use byte_unit::{AdjustedByte, Byte, Unit};
     use fake::faker::lorem::en::Words;
     use fake::Fake;
     use miniz_oxide::deflate::compress_to_vec;
@@ -752,36 +751,10 @@ mod test {
         encoder.buffer()
     }
 
-    fn to_unit(size: usize) -> AdjustedByte {
-        let byte = Byte::from_u64(size as u64);
-        byte.get_adjusted_unit(Unit::KB)
-    }
-
-    #[test]
-    fn test_encode_doc_size() {
-        println!(
-            "{:6}   {:6}   {:10}   {:10}   {:8}",
-            "lines", "words", "size", "comp", "comp ratio"
-        );
-        println!(
-            "{:6}   {:6}   {:10}   {:8}   {:8}",
-            "------", "------", "----------", "----------", "----------"
-        );
-        for i in 0..20 {
-            let lines = 10 * i;
-            let words = 20;
-            let buf = get_doc_encoding(lines, words);
-            let comp = compress_to_vec(&buf, 1);
-            println!(
-                "{:6}   {:6}   {:10.2}   {:10.2}   {:8.2}%",
-                lines,
-                lines * words,
-                to_unit(buf.len()),
-                to_unit(comp.len()),
-                100f32 * ((buf.len() as f32 - comp.len() as f32) / buf.len() as f32)
-            );
-        }
-    }
+    // NOTE: Commented out - uses removed byte_unit dependency
+    // fn to_unit(size: usize) -> AdjustedByte { ... }
+    // #[test]
+    // fn test_encode_doc_size() { ... }
 
     fn eq_doc(a: &Doc, b: &Doc) -> bool {
         let mut e1 = EncoderV1::new();
