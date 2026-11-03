@@ -30,3 +30,22 @@ sha1 = "0.10.6"
 serde_json = "1.0"
 serde_yaml = "0.9"
 uuid = { version = "1.8.0", features = ["v4"] }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "text_operations"
+harness = false
+
+[[bench]]
+name = "realistic_workloads"
+harness = false
+
+[[bench]]
+name = "large_document"
+harness = false
+
+[[bench]]
+name = "realistic_edits"
+harness = false
