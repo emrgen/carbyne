@@ -230,41 +230,109 @@ fn extract_text_ops(&self, block_id: usize) -> Vec<CrdtTextOp> {
 
 ---
 
-## CLARIFICATION: Do You Actually Need crdt_text_ops?
+## CORRECTION: For Collaborative Editing, crdt_text_ops IS REQUIRED
 
-**Short answer: No, not for current Carbyne.**
+**I was wrong.** For any multi-user system, ops table is mandatory, not optional.
 
-The hybrid design is useful when:
-1. Text split/joins across blocks (RGA instances span multiple blocks)
-2. Multi-client concurrent edits on same text (need dedup)
-3. Offline clients (resend detection)
-4. Compliance audit trail (log every keystroke)
+### Why each requirement is actually MANDATORY:
 
-**Current Carbyne (EMRGen) has none of these:**
-- ✓ Each block owns its text (no sharing/split-join)
-- ✓ Single/few editors (no concurrent conflicts)
-- ✓ Materialized state is enough (no need for op log)
-- ✓ Block version number is sufficient consistency guarantee
-
-**So keep it simple:**
+#### 1. Multi-client concurrent edits (ALWAYS)
 ```
-Client edits:
-  block.set("title", "hello") → doc.commit()
+Time T1: Doc = "Hello world"
 
-Server sync:
-  dirty_blocks() → [123]
-  rebuild_text(123) → "hello"
-  UPDATE blocks SET content="hello", version=?
-  ✓ Done
+Client A (offline at T1):
+  insert(0, "A-") → "A-Hello world"
 
-No ops table needed.
+Client B (online at T1):
+  insert(5, "[B]") → "Hello[B] world"
+
+WITHOUT ops table:
+  Server: "version conflict, rejected"
+  Client A loses work ❌
+
+WITH append-only ops (RGA):
+  Op A: {kind: "insert", seq:42, site:A, pos:0, text:"A-"}
+  Op B: {kind: "insert", seq:1, site:B, pos:5, text:"[B]"}
+  Both append (different IDs, so no conflict)
+  Each client reconstructs via RGA:
+    RGA deterministically orders ops by ID comparison
+    Result: "A-Hello[B] world" (or reverse, but same on all clients)
+  ✓ Correct
 ```
 
-**When to add ops table:**
-Only if you later need:
-- Multi-client text editing (conflicts need RGA dedup)
-- Text split/join at RGA level (instances across blocks)
-- Offline-first (resend detection)
-- Audit compliance (keystroke history)
+#### 2. Offline resends (ALWAYS)
+```
+Client sends op, network times out
+Retries: sends same op 3 times
 
-Until then: Carbyne's current model is already optimal.
+WITHOUT UNIQUE constraint:
+  Three inserts logged separately
+  Text: "abcdeXYZXYZXYZ" (tripled) ❌
+
+WITH UNIQUE(block, kind, id_seq, id_site):
+  Insert 1: appended
+  Resend 2: UNIQUE rejects (same ID)
+  Resend 3: UNIQUE rejects (same ID)
+  Text: "abcdeXYZ" (correct) ✓
+```
+
+#### 3. Split/join blocks (LIKELY)
+```
+User splits paragraph at position 50:
+  Block 123: "The quick brown fox..." (instance-A)
+  Block 999: "...the lazy dog" (instance-A, continued)
+
+WITHOUT crdt_instance_placements:
+  Client A editing block 123 (doesn't know about block 999)
+  Client B editing block 999 (doesn't know about block 123)
+  Server: "two separate instances?"
+  Catch-up for block 999:
+    Query: SELECT * FROM crdt_text_ops WHERE block_id = 999
+    Missing: ops from block 123 (which are same instance!) ❌
+
+WITH crdt_instance_placements:
+  Record: (instance-A, block 123)
+  Record: (instance-A, block 999) after split
+  Catch-up for block 999:
+    Query: SELECT instance_id FROM crdt_instance_placements WHERE block_id = 999
+    Get: instance-A
+    Query: SELECT * FROM crdt_text_ops WHERE instance_id = instance-A
+    Get: ALL ops for instance-A (from both blocks) ✓
+```
+
+#### 4. Audit trail (PROBABLY)
+- Users see who edited what
+- Compliance (healthcare, legal)
+- Immutable history
+
+### KEY INSIGHT: RGA Ops Commute
+
+Order doesn't matter. Server appends ops in any order. Clients reconstruct deterministically.
+→ No version conflicts
+→ No "rejected" edits
+→ Consistency without version checks
+
+### My Error
+
+I conflated:
+- Single-user editing (EMRGen without collab) → ops table not needed
+- Multi-user collaborative editing → ops table REQUIRED
+
+You asked about collaborative editing. I gave single-user advice. Wrong.
+
+### FOR COLLABORATIVE EDITING (Correct Path)
+
+✓ Keep Carbyne's structural CRDT
+✓ **Add crdt_text_ops** (required, non-negotiable)
+✓ **Add crdt_instance_placements** (required for split/join)
+✓ **Add UNIQUE constraint** (required for dedup)
+✓ Materialize to blocks.content (hybrid, O(1) reads)
+
+This is essential for:
+- Concurrent multi-client edits
+- Offline-first clients  
+- Resend handling
+- Block split/join
+- Audit compliance
+
+**Implementation: ~200 lines. Worth every line for correctness.**

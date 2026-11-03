@@ -12,6 +12,8 @@ use crate::ClockTick;
 pub(crate) struct DeleteItem {
     id: Id,
     range: IdRange,
+    /// how many consecutive delete-op ids this tombstone stands for (>=1 after coalescing)
+    ticks: u32,
 }
 
 impl DeleteItem {
@@ -19,7 +21,14 @@ impl DeleteItem {
         DeleteItem {
             id,
             range: range.into(),
+            ticks: 1,
         }
+    }
+
+    /// last delete-op clock covered by this tombstone
+    #[inline]
+    pub(crate) fn end_clock(&self) -> ClockTick {
+        self.id.clock + self.ticks.max(1) - 1
     }
 
     pub(crate) fn range(&self) -> &IdRange {
@@ -38,6 +47,29 @@ impl DeleteItem {
 
         adjust
     }
+
+    /// fold `other` into self when `other` is the next delete op of the same client
+    /// and its target range touches ours. keeps self.id.
+    pub(crate) fn join(&self, other: &DeleteItem) -> Option<DeleteItem> {
+        if self.id.client != other.id.client
+            || other.id.clock != self.end_clock() + 1
+            || self.range.client != other.range.client
+        {
+            return None;
+        }
+        let (start, end) = if self.range.end + 1 == other.range.start {
+            (self.range.start, other.range.end)
+        } else if other.range.end + 1 == self.range.start {
+            (other.range.start, self.range.end)
+        } else {
+            return None;
+        };
+        Some(DeleteItem {
+            id: self.id,
+            range: IdRange::new(self.range.client, start, end),
+            ticks: self.ticks + other.ticks,
+        })
+    }
 }
 
 impl Serialize for DeleteItem {
@@ -54,17 +86,22 @@ impl Serialize for DeleteItem {
 
 impl Encode for DeleteItem {
     fn encode<E: Encoder>(&self, e: &mut E, ctx: &mut EncodeContext) {
-        self.id.encode(e, ctx);
+        // delete-op id span, then target span
+        IdRange::new(self.id.client, self.id.clock, self.end_clock()).encode(e, ctx);
         self.range.encode(e, ctx);
     }
 }
 
 impl Decode for DeleteItem {
     fn decode<D: Decoder>(d: &mut D, ctx: &DecodeContext) -> Result<DeleteItem, String> {
-        let id = Id::decode(d, ctx)?;
+        let ids = IdRange::decode(d, ctx)?;
         let range = IdRange::decode(d, ctx)?;
 
-        Ok(DeleteItem::new(id, range))
+        Ok(DeleteItem {
+            id: ids.start_id(),
+            range,
+            ticks: ids.size(),
+        })
     }
 }
 

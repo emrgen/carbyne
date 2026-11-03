@@ -330,47 +330,72 @@ Estimated implementation: **~200 lines** in carbyne-blocks (text op append + ins
 
 ---
 
-## PRACTICAL CAVEAT: When Do You Actually Need the Hybrid?
+## CORRECTION: For Collaborative Editing, The Hybrid IS REQUIRED
 
-**For EMRGen (current Carbyne):** Not yet.
+**I was wrong to say "not yet needed".** For ANY collaborative system, ops table is mandatory.
 
-**Why:**
-- Blocks own their text (no RGA split/join across blocks)
-- Single editor per workspace (no concurrent conflicts)
-- Materialized `blocks.content` is the source of truth
-- Block version number = all changes are consistent
+### The Requirements Are Not Optional
 
-**Current workflow (zero overhead):**
-```
-Client: block.set("title", "hello")
-        doc.commit()
+#### 1. Multi-client concurrent edits (ALWAYS happens)
+- Two users typing simultaneously
+- Their position conflicts must resolve deterministically
+- RGA ops commute; version checks reject edits
+- **Need:** append-only ops table for both to succeed
 
-Server: dirty_blocks() → [123]
-        rebuild_text(123) → "hello"
-        UPDATE blocks SET content="hello", version=42
-        ✓ Done
-```
+#### 2. Offline clients (ALWAYS happen)
+- Network times out mid-sync
+- Client retries same op 3 times
+- Without UNIQUE: text gets tripled
+- **Need:** UNIQUE(block, kind, id_seq, id_site) dedup constraint
 
-**Add crdt_text_ops ONLY when:**
-1. **Multi-client concurrent edits** on same text
-   - Client A inserts at pos 5
-   - Client B inserts at pos 3
-   - Need RGA + dedup to resolve conflicts
-   
-2. **Text split/join** at RGA level
-   - Same text instance spans multiple blocks
-   - Need crdt_instance_placements to track slices
-   
-3. **Offline-first sync**
-   - Client goes offline, resends ops
-   - Need UNIQUE constraint for dedup
-   
-4. **Compliance audit trail**
-   - Must log every keystroke (not just final state)
-   - crdt_text_ops = immutable operation history
+#### 3. Split/join blocks (LIKELY happens)
+- User splits paragraph at position 50
+- RGA instance continues across blocks
+- Server must know both blocks have same instance
+- Catch-up only from block 999 must still find ops from block 123
+- **Need:** crdt_instance_placements to track slices
 
-**Carbyne TODAY:** None of these apply.
+#### 4. Audit trail (PROBABLY valuable)
+- Users want history: who changed what when
+- Compliance requirements (healthcare, legal)
+- **Need:** immutable ops log
 
-**Carbyne FUTURE:** Maybe #1 + #2 if you add multi-user editing.
+### Correct Recommendation
 
-**Recommendation:** Keep it simple. Materialize to `blocks.content`. Add ops table when you hit the specific problem it solves, not before.
+**For collaborative editing, adopt the FULL hybrid:**
+
+✓ **Keep** Carbyne's structural CRDT + dirty detection
+✓ **Add** append-only `crdt_text_ops` table (NOT optional)
+✓ **Add** `crdt_instance_placements` for split/join (NOT optional)
+✓ **Add** UNIQUE constraint for dedup (NOT optional)
+✓ **Materialize** text in `blocks.content` (O(1) reads)
+
+### Why This Works
+
+**Write Flow:**
+1. Client A: insert(0, "A-"), Client B: insert(5, "[B]")
+2. Both ops append (different IDs, no conflict)
+3. RGA dedup ensures correctness
+4. All clients reconstruct same result
+
+**Read Flow:**
+1. SELECT blocks.content = O(1) ✓ (Carbyne benefit)
+2. Catch-up: GetCrdtTextOpsSince = O(log n) ✓ (Blocktree pattern)
+
+**Durability:**
+1. Ops never conflict (append-only)
+2. Resends deduped (UNIQUE)
+3. Split/join tracked (instances)
+4. History preserved (ops log)
+
+**Implementation:** ~200 lines. Essential for correctness.
+
+### Not "Later"—Now
+
+Don't wait until you have problems. Build it from the start:
+- Multi-client editing is the whole point
+- RGA ops MUST commute (no version checks)
+- Offline clients WILL happen (network is real)
+- Dedup is non-negotiable (resends happen)
+
+This is **the cost of collaborative editing**. Worth it.

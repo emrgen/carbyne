@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/carbyne", "crates/carbyne-blocks"]
+members = ["crates/carbyne", "crates/carbyne-blocks", "crates/carbyne-db"]
 resolver = "2"
 
 [workspace.package]

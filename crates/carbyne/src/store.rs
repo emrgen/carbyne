@@ -206,6 +206,10 @@ impl DocStore {
             &self.state.clients,
         );
 
+        // tier-1 tombstone GC: fold this change's consecutive deletes of adjacent
+        // targets into single tombstones. pure index compaction, no ids dropped.
+        self.deletes.coalesce(change_id);
+
         self.commited_clock = self.clock;
 
         self.emitter.publish(&self.items);
@@ -620,6 +624,31 @@ impl From<TypeStore> for ItemDataStore {
 
 // DeleteItem for clients
 pub type DeleteItemStore = ClientStore<DeleteItem>;
+
+impl DeleteItemStore {
+    /// merge runs of consecutive delete ops (within `range`) whose targets are adjacent.
+    pub(crate) fn coalesce(&mut self, range: impl Into<IdRange>) {
+        let range = range.into();
+        let Some(store) = self.items.get_mut(&range.client) else {
+            return;
+        };
+        let run = store.get_range(&range);
+        if run.len() < 2 {
+            return;
+        }
+        let mut out: Vec<DeleteItem> = Vec::with_capacity(run.len());
+        for item in run {
+            match out.last().and_then(|last| last.join(&item)) {
+                Some(joined) => *out.last_mut().unwrap() = joined,
+                None => out.push(item),
+            }
+        }
+        for clock in range.start..=range.end {
+            store.remove(&Id::new(range.client, clock));
+        }
+        store.extend(out.into_iter());
+    }
+}
 // Types for clients
 pub type TypeStore = ClientStore<Type>;
 
@@ -1167,8 +1196,8 @@ impl IdClockDiff for ItemStore<DeleteItem> {
 
     fn diff(&self, clock: ClockTick) -> Self::Target {
         let mut items = ItemStore::default();
-        for (id, item) in self.map.iter() {
-            if id.clock > clock {
+        for (_, item) in self.map.iter() {
+            if item.end_clock() > clock {
                 items.insert(item.clone());
             }
         }

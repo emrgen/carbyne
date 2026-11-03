@@ -52,6 +52,9 @@ mod test {
     use crate::doc::{CloneDeep, Doc};
     use crate::print_yaml;
     use crate::sync::{equal_docs, sync_docs, SyncDirection};
+    use crate::decoder::Decode;
+    use crate::encoder::{Encode, Encoder};
+    use crate::Diff;
     use rand::prelude::SliceRandom;
     use rand::Rng;
     use serde_json::json;
@@ -319,6 +322,53 @@ mod test {
 
         doc.rollback();
         assert!(!a.is_deleted(), "rollback should undo an uncommitted delete");
+    }
+
+    #[test]
+    fn test_commit_coalesces_adjacent_tombstones() {
+        let doc1 = Doc::default();
+        let doc2 = doc1.clone_deep();
+        doc2.update_client();
+
+        let list = doc1.list();
+        doc1.set("list", list.clone());
+        // 5 atoms get consecutive ids; delete the middle 3 in order
+        let atoms: Vec<_> = (0..5).map(|i| doc1.atom(i.to_string())).collect();
+        for a in &atoms {
+            list.append(a.clone());
+        }
+        doc1.commit();
+        sync_docs(&doc1, &doc2, SyncDirection::LeftToRight);
+
+        for a in &atoms[1..4] {
+            a.delete();
+        }
+        doc1.commit();
+
+        let n: usize = doc1
+            .store
+            .borrow()
+            .deletes
+            .iter()
+            .map(|(_, s)| s.size())
+            .sum();
+        assert_eq!(n, 1, "3 adjacent deletes should coalesce into 1 tombstone");
+
+        sync_docs(&doc1, &doc2, SyncDirection::LeftToRight);
+        assert!(equal_docs(&doc1, &doc2));
+        let visible = serde_json::to_value(&doc2).unwrap()["root"]["content"]["list"]["content"]
+            .as_array()
+            .unwrap()
+            .len();
+        assert_eq!(visible, 2, "doc2 should see only the 2 undeleted atoms");
+
+        // round-trip the coalesced tombstone through the wire codec
+        // (full Diff round-trip is broken on HEAD for any committed change; scope to deletes)
+        let deletes = doc1.store.borrow().deletes.clone();
+        let mut e = crate::codec_v1::EncoderV1::new();
+        deletes.encode(&mut e, &mut Default::default());
+        let decoded = crate::store::DeleteItemStore::decode(&mut e.decoder(), &Default::default()).unwrap();
+        assert_eq!(deletes, decoded);
     }
 
     // #[test]

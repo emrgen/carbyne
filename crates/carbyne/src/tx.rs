@@ -8,7 +8,7 @@ use crate::bimapid::ClientId;
 use crate::crdt_yata::{integrate_yata, remove_yata};
 use crate::delete::DeleteItem;
 use crate::diff::Diff;
-use crate::id::{WithId, WithTarget};
+use crate::id::{WithId, WithIdRange, WithTarget};
 use crate::item::{Content, ItemData, ItemKind, ItemRef, Linked, StartEnd};
 use crate::print_yaml;
 use crate::queue_store::ClientQueueStore;
@@ -171,8 +171,8 @@ impl Tx {
         }
 
         // now that all ready items are collected, collect the ready delete items
-        for (_, store) in self.pending.iter_delete_items() {
-            for (_, data) in store.iter() {
+        for (_, delete_store) in self.pending.iter_delete_items() {
+            for (_, data) in delete_store.iter() {
                 // FIXME: if the the target item is split or merged,
                 // the delete item should be split or merged before integration
                 let id = data.range().id();
@@ -257,6 +257,27 @@ impl Tx {
             }
 
             times.push(now.elapsed());
+        }
+
+        // apply remote tombstones: mark every item in each target range deleted.
+        // one tombstone may span several split items; walk by range.
+        for (_, delete_store) in self.ready.iter_delete_items() {
+            for (_, del) in delete_store.iter() {
+                let range = del.range();
+                let mut clock = range.start;
+                while clock <= range.end {
+                    let id = crate::id::Id::new(range.client, clock);
+                    match store.find(&id) {
+                        Some(target) => {
+                            let r = target.range();
+                            target.item_ref().borrow_mut().make_deleted();
+                            clock = r.end + 1;
+                        }
+                        None => clock += 1,
+                    }
+                }
+                store.insert_delete(del.clone());
+            }
         }
 
         // println!("Time taken to integrate: {:?}", now.elapsed());
