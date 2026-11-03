@@ -371,6 +371,33 @@ mod test {
         assert_eq!(deletes, decoded);
     }
 
-    // #[test]
-    // fn test_inser
+    /// Peer's clock lands inside a multi-tick string: the diff must ship exactly the
+    /// unseen suffix and the docs must converge. Covers the range-select straddle path.
+    #[test]
+    fn test_sync_partial_string_straddle() {
+        let d1 = Doc::default();
+        let d2 = d1.clone_deep();
+        d2.update_client();
+
+        let text = d1.text();
+        d1.set("t", text.clone());
+        text.append(d1.string("abcdef"));
+        d1.commit();
+
+        // d2 has seen everything up to the middle of "abcdef"
+        let mut mid = d2.version();
+        let c1 = *d1.version().state.clients.keys().next().unwrap();
+        let end = *d1.version().get(&c1).unwrap();
+        mid.update(c1, end - 3);
+
+        let diff = d1.diff(mid.clone());
+        let shipped = diff.items.items.get(&c1).unwrap();
+        assert_eq!(shipped.size(), 1);
+        let item = shipped.first().unwrap();
+        assert_eq!(item.content, crate::item::Content::String("def".into()));
+
+        // full sync converges regardless
+        sync_docs(&d1, &d2, SyncDirection::LeftToRight);
+        assert!(equal_docs(&d1, &d2));
+    }
 }

@@ -1126,25 +1126,47 @@ pub(crate) trait IdClockDiff {
     fn diff(&self, clock: ClockTick) -> Self::Target;
 }
 
+/// Items strictly newer than `clock` plus the one straddling it, O(log n + k).
+/// Relies on `ItemStore` being single-client with non-overlapping `[clock, clock+ticks)` spans.
+fn newer_than<'a, T>(
+    map: &'a BTreeMap<Id, T>,
+    clock: ClockTick,
+) -> impl Iterator<Item = (&'a Id, &'a T)> {
+    let client = map.keys().next().map(|id| id.client).unwrap_or_default();
+    let straddle = map
+        .range(..=Id::new(client, clock))
+        .next_back()
+        .filter(|(id, _)| id.clock < clock);
+    straddle
+        .into_iter()
+        .chain(map.range(Id::new(client, clock + 1)..))
+}
+
+fn diff_split<T: ItemStoreEntry>(
+    map: &BTreeMap<Id, T>,
+    clock: ClockTick,
+    data_of: impl Fn(&T) -> ItemData,
+) -> ItemStore<ItemData> {
+    let mut items = ItemStore::default();
+    for (id, item) in newer_than(map, clock) {
+        let data = data_of(item);
+        if id.clock > clock {
+            items.insert(data);
+        } else if clock < id.clock + data.ticks() - 1 {
+            // `clock` is seen inclusive; ship from clock+1. split takes an item-relative offset.
+            if let Ok((_, r)) = data.split(clock + 1 - id.clock) {
+                items.insert(r);
+            }
+        }
+    }
+    items
+}
+
 impl IdClockDiff for ItemStore<ItemRef> {
     type Target = ItemStore<ItemData>;
 
     fn diff(&self, clock: ClockTick) -> Self::Target {
-        let mut items = ItemStore::default();
-        for (id, item) in self.map.iter() {
-            let data = item.borrow().data.clone();
-            let ticks = data.ticks();
-            // collect items that are newer than the given clock
-            if id.clock > clock {
-                items.insert(data);
-            } else if id.clock < clock && clock < id.clock + ticks {
-                if let Ok((_, r)) = data.split(clock) {
-                    items.insert(r);
-                }
-            }
-        }
-
-        items
+        diff_split(&self.map, clock, |item| item.borrow().data.clone())
     }
 }
 
@@ -1152,21 +1174,7 @@ impl IdClockDiff for ItemStore<Type> {
     type Target = ItemStore<ItemData>;
 
     fn diff(&self, clock: ClockTick) -> Self::Target {
-        let mut items = ItemStore::default();
-        for (id, item) in self.map.iter() {
-            let data = item.item_ref().borrow().data.clone();
-            let ticks = data.ticks();
-            // collect items that are newer than the given clock
-            if id.clock > clock {
-                items.insert(data);
-            } else if id.clock < clock && clock < id.clock + ticks {
-                if let Ok((_, r)) = data.split(clock) {
-                    items.insert(r);
-                }
-            }
-        }
-
-        items
+        diff_split(&self.map, clock, |item| item.item_ref().borrow().data.clone())
     }
 }
 
@@ -1174,20 +1182,7 @@ impl IdClockDiff for ItemStore<ItemData> {
     type Target = ItemStore<ItemData>;
 
     fn diff(&self, clock: ClockTick) -> Self::Target {
-        let mut items = ItemStore::default();
-        for (id, data) in self.map.iter() {
-            let ticks = data.ticks();
-            // collect items that are newer than the given clock
-            if id.clock > clock {
-                items.insert(data.clone());
-            } else if id.clock < clock && clock < id.clock + ticks {
-                if let Ok((_, r)) = data.split(clock) {
-                    items.insert(r);
-                }
-            }
-        }
-
-        items
+        diff_split(&self.map, clock, Clone::clone)
     }
 }
 
@@ -1196,12 +1191,11 @@ impl IdClockDiff for ItemStore<DeleteItem> {
 
     fn diff(&self, clock: ClockTick) -> Self::Target {
         let mut items = ItemStore::default();
-        for (_, item) in self.map.iter() {
+        for (_, item) in newer_than(&self.map, clock) {
             if item.end_clock() > clock {
                 items.insert(item.clone());
             }
         }
-
         items
     }
 }
@@ -1213,6 +1207,7 @@ mod tests {
     use uuid::Uuid;
 
     use crate::codec_v1::EncoderV1;
+    use crate::item::Content;
 
     use super::*;
 
@@ -1225,6 +1220,34 @@ mod tests {
 
         store.insert(Id::new(1, 5));
         assert!(store.contains(&Id::new(1, 5,)));
+    }
+
+    /// Range-select must match the old full scan at every boundary:
+    /// item before clock → skipped; straddling string → right half only;
+    /// item at exactly clock → skipped; items after → whole.
+    #[test]
+    fn test_item_store_diff_boundaries() {
+        let mut store: ItemStore<ItemData> = ItemStore::default();
+        let atom = |c| ItemData::new(ItemKind::Atom, Id::new(1, c));
+        let mut s = ItemData::new(ItemKind::String, Id::new(1, 10));
+        s.content = Content::String("abcde".into()); // ticks 10..15
+        store.insert(atom(1));
+        store.insert(s);
+        store.insert(atom(20));
+        store.insert(atom(21));
+
+        let ids = |d: ItemStore<ItemData>| d.iter().map(|(id, _)| id.clock).collect::<Vec<_>>();
+
+        assert_eq!(ids(store.diff(0)), vec![1, 10, 20, 21]);
+        assert_eq!(ids(store.diff(1)), vec![10, 20, 21]);
+        // clock is the last tick seen (inclusive): string 10..14 → ship 13,14
+        let mid = store.diff(12);
+        assert_eq!(ids(mid.clone()), vec![13, 20, 21]);
+        assert_eq!(mid.get(&Id::new(1, 13)).unwrap().content, Content::String("de".into()));
+        assert_eq!(ids(store.diff(14)), vec![20, 21]);
+        assert_eq!(ids(store.diff(20)), vec![21]);
+        assert_eq!(ids(store.diff(21)), Vec::<u32>::new());
+        assert_eq!(ids(ItemStore::<ItemData>::default().diff(5)), Vec::<u32>::new());
     }
 
     #[test]

@@ -39,7 +39,7 @@ Summary: cbdocs design is sound and matches this audit. The crate that was suppo
 | 8  | No `journal_mode=WAL` / `synchronous=NORMAL`                               | `lib.rs:60-71`, `storage.rs:29-51`                            | fsync per txn.                                                                                                   |
 | 9  | Fixed-width uncompressed codec; `Diff` round-trip panics                   | `codec_v1.rs:64-90,155` (old)                                 | 3–5× egress. Round-trip + panic **DONE**, see below. Varints not done.                                           |
 | 10 | `Content::Types`/`Embed` encode nothing                                    | `item.rs:1337-1342` (old)                                     | Silent data loss. **DONE**: `Embed` + full `Any` codec; `Types` is derived-only, now `unreachable!`/`Err`.       |
-| 11 | `diff()` scans all items + changes per client                              | `store.rs:1100-1116`, `change.rs:458-475`                     | O(history) per sync. perf P0.                                                                                    |
+| 11 | `diff()` scans all items + changes per client                              | `store.rs:1100-1116`, `change.rs:458-475` (old)               | O(history) per sync. **DONE**, see below. Also fixed: straddling string shipped wrong suffix.                    |
 | 12 | carbyne-db lamport `u64` instead of VV                                     | `instance.rs`, `message.rs` (old)                             | **DONE** with #2: `DbInstance::version() -> ClientState`, wire carries `ClientState::to_bytes()`.                |
 
 Pre-existing, found while implementing, not fixed:
@@ -130,6 +130,20 @@ Tests: `carbyne-db/tests/integration_durability.rs` (`test_snapshot_compacts_tai
 
 Ceiling: snapshot is a full `diff()` (#11 cost); `tail_len()` iterates keys; no ack tracking so tail can only be compacted by snapshot, not by peer coverage. Those are #11 and GC tier 2 prerequisites.
 
+## #11 range-select `diff` (DONE)
+
+Files: `crates/carbyne/src/store.rs` (`newer_than`, `diff_split`, four `IdClockDiff` impls), `change.rs` `ChangeStore::diff`.
+
+- Items: `BTreeMap<Id,_>` is ordered by `(client, clock)`; per-client stores hold one client, so `range(Id(client, clock+1)..)` plus one `next_back()` for the straddling item is O(log n + k).
+- Changes: `ChangeId::Ord` treats overlapping ranges as `Equal`, so `set.range(ChangeId(tick+1, tick+1)..)` starts at the first change ending after `tick`.
+- Found while writing the boundary test: old straddle logic called `data.split(clock)` with an **absolute** clock where `split` takes an item-relative offset. A peer that had seen `"abc"` of `"abcdef"` received `"f"`, not `"def"`. Now `split(clock + 1 - id.clock)`.
+
+Measured (release, 20k atoms / 200 changes, diff of 1 new item ×100): 45 ms → 7.7 ms. Full diff unchanged (~2 ms).
+
+Tests: `store::tests::test_item_store_diff_boundaries` (before/at/straddle/after clock), `sync::test::test_sync_partial_string_straddle` (fails on old code with `"f"` ≠ `"def"`).
+
+Ceiling: remaining ~77 µs/diff is `ClientStore` iteration over every client plus `Diff::optimize`; fine until client counts are in the thousands.
+
 ## Next steps, in cost order
 
 Reconciled with `perf/README.md` §Recommended work order and `db/README.md` §Initial implementation policy.
@@ -138,7 +152,7 @@ Reconciled with `perf/README.md` §Recommended work order and `db/README.md` §I
 2. **#8 + #7** WAL pragma + upsert in carbyne-blocks. Config-level.
 3. ~~**#2** carbyne-db append-only + `ClientState` (#12)~~ done.
 4. ~~**#9** `Diff` round-trip~~ done. ~~**#10** `Types`/`Embed` encoding~~ done (`item.rs` `Any` encode/decode, all 17 shapes; `diff::test::test_encode_decode_diff` covers an `Any::Map` embed). Varints still open.
-5. **#11** Range-select in `ItemStore::diff` / `ChangeStore::diff` (perf P0). Use `IdRangeMap` (`persist.rs:29`) as the index.
+5. ~~**#11** Range-select diff~~ done.
 6. **#4** Persist `DocStoreData` snapshot + op tail; hot-doc cache with eviction. Unlocks the 20 GiB → 200 MiB RAM claim and GC tier 2/3.
 7. **#5** Delete the fake archive or implement it against the sealed-block design.
 

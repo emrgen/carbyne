@@ -464,11 +464,14 @@ impl ChangeStore {
                 .map
                 .entry(*client)
                 .or_insert_with(ClientChangeStore::default);
-            store.iter().for_each(|(change_id)| {
+            // ChangeId ordering treats overlapping ranges as Equal, so the probe
+            // `[tick+1, tick+1]` lands on the first change ending after tick. O(log n + k).
+            let probe = ChangeId::new(*client, *client_tick + 1, *client_tick + 1);
+            for change_id in store.set.range(probe..) {
                 if change_id.start > *client_tick {
-                    change_store.insert(change_id.clone());
+                    change_store.insert(*change_id);
                 }
-            })
+            }
         }
 
         diff
