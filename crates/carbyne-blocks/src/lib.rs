@@ -511,6 +511,11 @@ impl BlockStore {
 
         Ok(ops)
     }
+
+    /// Wire text ops into sync - record placement
+    pub fn sync_text_ops(&self, block_id: usize, instance_id: &str) -> Result<()> {
+        self.record_placement(instance_id, block_id)
+    }
 }
 
 #[derive(Clone, Debug)]

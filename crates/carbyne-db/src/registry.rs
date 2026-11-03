@@ -26,7 +26,26 @@ impl DbRegistry {
             storage,
         })
     }
+    pub fn load_all(&self) -> Result<()> {
+        let metadata_entries = self.storage.iter_keys_with_prefix("metadata:")?;
 
+        for (_, metadata_bytes) in metadata_entries {
+            let metadata: DbMetadata = bincode::deserialize(&metadata_bytes)
+                .map_err(|e| crate::error::DbError::SerializationError(e.to_string()))?;
+
+            let db_id = DbId(uuid::Uuid::parse_str(&metadata.id)
+                .map_err(|e| crate::error::DbError::SerializationError(e.to_string()))?);
+            let name = DbName(metadata.name.clone());
+
+            // Load from storage (replay changelog)
+            let changelog = Arc::new(ChangeLog::new(db_id, self.storage.clone()));
+            let instance = Arc::new(DbInstance::from_storage(db_id, name, changelog)?);
+
+            self.instances.insert(db_id, instance);
+        }
+
+        Ok(())
+    }
     pub fn create(&self, name: DbName) -> Result<Arc<DbInstance>> {
         let id = DbId::new();
         let changelog = Arc::new(ChangeLog::new(id, self.storage.clone()));

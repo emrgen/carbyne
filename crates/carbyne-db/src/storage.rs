@@ -36,6 +36,23 @@ impl Storage {
             .delete(key.as_bytes())
             .map_err(|e| DbError::StorageError(e.to_string()))
     }
+    pub fn iter_keys_with_prefix(&self, prefix: &str) -> Result<Vec<(String, Vec<u8>)>> {
+        let mut result = vec![];
+        let iter = self.db.iterator(rocksdb::IteratorMode::From(
+            prefix.as_bytes(),
+            rocksdb::Direction::Forward,
+        ));
+
+        for (key, value) in iter {
+            let key_str = String::from_utf8_lossy(&key).to_string();
+            if !key_str.starts_with(prefix) {
+                break;
+            }
+            result.push((key_str, value.to_vec()));
+        }
+
+        Ok(result)
+    }
 }
 
 impl Clone for Storage {
