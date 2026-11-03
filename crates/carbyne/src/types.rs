@@ -673,7 +673,7 @@ impl Serialize for Type {
 
 impl Encode for Type {
     fn encode<T: Encoder>(&self, e: &mut T, ctx: &mut EncodeContext) {
-        e.item(ctx, &self.item_ref().borrow().data.clone());
+        e.item(ctx, &self.item_ref().borrow().data);
     }
 }
 
