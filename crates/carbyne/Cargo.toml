@@ -6,7 +6,13 @@ edition.workspace = true
 [features]
 default = ["uuid-client"]
 uuid-client = []
-nightly = []
+# scaffolding for alternate client-id backends, never enabled by default;
+# declared so #[cfg(feature = "...")] in id.rs doesn't trip unexpected_cfgs
+string-client = []
+u64-client = []
+# scaffolding for an alternate Fugue-based list insertion algorithm in
+# nlist.rs, never enabled by default; declared for the same reason.
+fugue = []
 
 [dependencies]
 bimap = "0.6.3"
