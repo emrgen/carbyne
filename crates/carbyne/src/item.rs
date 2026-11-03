@@ -1211,7 +1211,7 @@ impl WithId for ItemData {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum ItemKey {
+pub enum ItemKey {
     Number(u32),
     String(String),
 }

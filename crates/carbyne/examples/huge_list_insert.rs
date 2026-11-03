@@ -22,7 +22,7 @@ fn main() {
             // random index
             let index = rand::random::<usize>() % size;
 
-            l1.insert(index as u32, item);
+            l1.as_list().unwrap().insert(index as u32, item);
             // l1.append(item);
             // l1.prepend(item);
             size += 1;

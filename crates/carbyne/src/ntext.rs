@@ -51,7 +51,7 @@ impl NText {
         }
     }
 
-    pub(crate) fn clear(&self) {
+    pub fn clear(&self) {
         self.item_ref()
             .borrow()
             .items()
@@ -64,7 +64,7 @@ impl NText {
         Content::Types(items)
     }
 
-    pub(crate) fn size(&self) -> u32 {
+    pub fn size(&self) -> u32 {
         self.visible_item_iter()
             .fold(0, |acc, item| acc + item.size())
     }

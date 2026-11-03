@@ -5,11 +5,13 @@ use crate::doc::{CloneDeep, Doc};
 use crate::item::Content;
 use crate::sync::{sync_docs, SyncDirection};
 use crate::types::Type;
+use crate::ntext::NText;
+use crate::nstring::NString;
 
 #[derive(Clone, Debug)]
 pub struct RichText {
     pub doc: Doc,
-    pub text: Type,
+    pub text: NText,
 }
 
 impl RichText {
@@ -20,7 +22,7 @@ impl RichText {
 
         RichText {
             doc,
-            text: text.into(),
+            text,
         }
     }
 
@@ -81,7 +83,7 @@ impl CloneDeep for RichText {
     fn clone_deep(&self) -> Self {
         let doc = self.doc.clone_deep();
         doc.update_client();
-        let text = doc.get("text").unwrap().clone();
+        let text = doc.get("text").unwrap().as_text().unwrap().clone();
         RichText { doc, text }
     }
 }

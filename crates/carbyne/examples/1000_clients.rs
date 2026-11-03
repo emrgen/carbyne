@@ -6,7 +6,7 @@ use carbyne::Doc;
 fn insert_text(doc: &Doc, text: &str) {
     doc.update_client();
     let text = doc.string(text);
-    doc.get("text").unwrap().append(text);
+    doc.get("text").unwrap().as_text().unwrap().append(text);
 }
 
 // This example is used to test the size of the document after inserting 500 characters by 500 clients.
@@ -25,7 +25,7 @@ fn main() -> Result<(), Error> {
         counter = i / 100;
     }
 
-    let mut encoder = nitro::codec_v1::EncoderV1::new();
+    let mut encoder = carbyne::codec_v1::EncoderV1::new();
 
     doc.encode(&mut encoder, &mut Default::default());
 
@@ -37,7 +37,7 @@ fn main() -> Result<(), Error> {
         miniz_oxide::deflate::compress_to_vec(&buf, 1).len()
     );
 
-    let mut encoder = nitro::codec_v1::EncoderV1::new();
+    let mut encoder = carbyne::codec_v1::EncoderV1::new();
     let v = doc.version();
     let clients = v.clients();
 

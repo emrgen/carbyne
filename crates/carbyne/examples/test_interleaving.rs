@@ -8,11 +8,11 @@ fn main() {
     let mut l1: Type = doc.list().into();
     doc.set("list", l1.clone());
 
-    l1.append(doc.atom("a"));
+    l1.as_list().unwrap().append(doc.atom("a"));
 
     let doc2 = doc.clone_deep();
     doc2.update_client();
-    doc2.get("list").unwrap().prepend(doc2.atom("b"));
+    doc2.get("list").unwrap().as_list().unwrap().prepend(doc2.atom("b"));
 
     sync_docs(&doc, &doc2, Default::default());
 

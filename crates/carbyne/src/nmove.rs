@@ -63,52 +63,12 @@ impl NMove {
         }
     }
 
-    #[inline]
-    fn set(&self, key: String, item: Type) {
-        if let Some(target) = self.get_target().as_ref() {
-            target.set(key, item);
-        }
-    }
 
     #[inline]
     fn delete(&self) {
         self.item_ref().delete(1);
     }
 
-    #[inline]
-    fn prepend(&self, item: Type) {
-        if let Some(target) = self.get_target().as_ref() {
-            target.prepend(item);
-        }
-    }
-
-    #[inline]
-    fn append(&self, item: Type) {
-        if let Some(target) = self.get_target().as_ref() {
-            target.append(item);
-        }
-    }
-
-    #[inline]
-    fn insert(&self, offset: u32, item: Type) {
-        if let Some(target) = self.get_target().as_ref() {
-            target.insert(offset, item);
-        }
-    }
-
-    #[inline]
-    fn remove(&self, key: ItemKey) {
-        if let Some(target) = self.get_target().as_ref() {
-            target.remove(key);
-        }
-    }
-
-    #[inline]
-    fn clear(&self) {
-        if let Some(target) = self.get_target().as_ref() {
-            target.clear();
-        }
-    }
 
     #[inline]
     pub(crate) fn to_json(&self) -> serde_json::Value {

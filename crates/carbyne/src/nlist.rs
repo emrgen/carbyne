@@ -131,7 +131,7 @@ impl Deref for NList {
 }
 
 impl NList {
-    fn prepend(&self, item: impl Into<Type>) {
+    pub fn prepend(&self, item: impl Into<Type>) {
         let item = item.into();
         #[cfg(feature = "fugue")]
         {
@@ -202,7 +202,7 @@ impl NList {
     }
 
     #[inline]
-    pub(crate) fn clear(&self) {
+    pub fn clear(&self) {
         let items = self.borrow().as_list();
         for item in items {
             item.delete();

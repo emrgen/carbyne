@@ -12,7 +12,7 @@ use crate::store::WeakStoreRef;
 use crate::types::Type;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct NMap {
+pub struct NMap {
     pub(crate) item: ItemRef,
 }
 
@@ -30,7 +30,7 @@ impl NMap {
     }
 
     /// size of the map
-    pub(crate) fn size(&self) -> u32 {
+    pub fn size(&self) -> u32 {
         let item = self.borrow();
         let map = item.as_map(&self.store);
         map.len() as u32
@@ -79,7 +79,7 @@ impl NMap {
         // self.item_ref().add_mark(mark);
     }
 
-    pub(crate) fn get(&self, key: impl Into<ItemKey>) -> Option<Type> {
+    pub fn get(&self, key: impl Into<ItemKey>) -> Option<Type> {
         let item = self.borrow();
         let key = key.into().as_string();
         let map = self.visible_children();
@@ -88,7 +88,7 @@ impl NMap {
         item.cloned()
     }
 
-    pub(crate) fn set(&self, field: impl Into<String>, item: impl Into<Type>) {
+    pub fn set(&self, field: impl Into<String>, item: impl Into<Type>) {
         let item = item.into();
         let item_ref = item.item_ref();
         let store = item_ref.store.upgrade().unwrap();
@@ -98,9 +98,9 @@ impl NMap {
         self.item_ref().append(item);
     }
 
-    pub(crate) fn remove(&self, key: ItemKey) {
+    pub fn remove(&self, key: impl Into<ItemKey>) {
         let map = self.visible_children();
-        let value = map.get(&key.as_string());
+        let value = map.get(&key.into().as_string());
         if let Some(value) = value {
             value.delete();
         }
@@ -119,7 +119,7 @@ impl NMap {
         self.visible_children().values().cloned().collect()
     }
 
-    pub(crate) fn clear(&self) {
+    pub fn clear(&self) {
         let item = self.borrow();
         let map = item.as_map(&self.store);
         for item in map.values() {
@@ -128,12 +128,12 @@ impl NMap {
     }
 
     fn visible_children(&self) -> HashMap<String, Type> {
-        let mut curr = self.start();
+        let mut curr = self.borrow().start.clone();
         let mut map = HashMap::new();
         while let Some(item) = curr {
             if item.is_visible() {
                 if let Some(field) = item.field() {
-                    map.insert(field, Type::from(item.clone()));
+                    map.insert(field, item.clone());
                 }
             }
 

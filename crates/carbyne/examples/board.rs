@@ -21,13 +21,13 @@ fn main() -> Result<(), Error> {
     assert!(equal_docs(&doc, &pair));
 
     todo.append(doc.string("a"));
-    pair.get("todo").unwrap().append(pair.string("b"));
+    pair.get("todo").unwrap().as_list().unwrap().append(pair.string("b"));
 
     progress.append(doc.string("c"));
-    pair.get("progress").unwrap().append(pair.string("d"));
+    pair.get("progress").unwrap().as_list().unwrap().append(pair.string("d"));
 
     done.append(doc.string("e"));
-    pair.get("done").unwrap().append(pair.string("f"));
+    pair.get("done").unwrap().as_list().unwrap().append(pair.string("f"));
 
     sync_docs(&doc, &pair, Default::default());
 

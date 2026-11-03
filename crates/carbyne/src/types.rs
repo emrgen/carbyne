@@ -74,7 +74,7 @@ impl Type {
 
 impl Type {
     #[inline]
-    pub(crate) fn as_list(&self) -> Option<NList> {
+    pub fn as_list(&self) -> Option<NList> {
         match self {
             Type::List(n) => Some(n.clone()),
             _ => None,
@@ -82,7 +82,7 @@ impl Type {
     }
 
     #[inline]
-    pub(crate) fn as_map(&self) -> Option<NMap> {
+    pub fn as_map(&self) -> Option<NMap> {
         match self {
             Type::Map(n) => Some(n.clone()),
             _ => None,
@@ -90,7 +90,7 @@ impl Type {
     }
 
     #[inline]
-    pub(crate) fn as_text(&self) -> Option<NText> {
+    pub fn as_text(&self) -> Option<NText> {
         match self {
             Type::Text(n) => Some(n.clone()),
             _ => None,
@@ -470,45 +470,6 @@ impl Type {
         }
     }
 
-    #[inline]
-    pub fn append(&self, item: impl Into<Type>) {
-        match self {
-            Type::List(n) => n.append(item),
-            Type::Text(n) => n.append(item),
-            _ => panic!("append: not implemented"),
-        }
-    }
-
-    #[inline]
-    pub fn prepend(&self, item: impl Into<Type>) {
-        match self {
-            Type::List(n) => n.prepend(item),
-            Type::Text(n) => n.prepend(item),
-            _ => panic!("prepend: not implemented"),
-        }
-    }
-
-    #[inline]
-    pub fn insert(&self, offset: u32, item: impl Into<Type>) {
-        match self {
-            Type::List(n) => n.insert(offset, item),
-            Type::Text(n) => {
-                let item = item.into();
-                assert!(item.is_string());
-                n.insert(offset, item)
-            }
-            _ => panic!("insert: not implemented"),
-        }
-    }
-
-    #[inline]
-    pub fn set(&self, key: impl Into<ItemKey>, item: impl Into<Type>) {
-        let key = key.into();
-        match self {
-            Type::Map(n) => n.set(key.as_string(), item.into()),
-            _ => panic!("set: not implemented"),
-        }
-    }
 
     #[inline]
     pub fn get(&self, key: impl Into<ItemKey>) -> Option<Type> {
@@ -520,12 +481,6 @@ impl Type {
     }
 
     #[inline]
-    pub fn remove(&self, key: ItemKey) {
-        match self {
-            Type::Map(n) => n.remove(key),
-            _ => panic!("remove: not implemented"),
-        }
-    }
 
     #[inline]
     pub fn delete(&self) {
@@ -533,14 +488,6 @@ impl Type {
     }
 
     #[inline]
-    pub(crate) fn clear(&self) {
-        match self {
-            Type::List(n) => n.clear(),
-            Type::Map(n) => n.clear(),
-            Type::Text(n) => n.clear(),
-            _ => panic!("clear: not implemented"),
-        }
-    }
 
     pub(crate) fn text_content(&self) -> String {
         match self {

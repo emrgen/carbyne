@@ -26,7 +26,7 @@ fn main() {
             // random index
             let index = rand::random::<usize>() % size;
 
-            l1.insert(index as u32, item);
+            l1.as_list().unwrap().insert(index as u32, item);
             // l1.append(item);
             size += 1;
         }
@@ -45,7 +45,7 @@ fn main() {
             let item = doc2.string(c.to_string());
             // random index
             let index = rand::random::<usize>() % size;
-            l2.append(item);
+            l2.as_list().unwrap().append(item);
             size += 1;
         }
     }
