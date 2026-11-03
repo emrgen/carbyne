@@ -100,6 +100,21 @@ impl BlockStore {
         })
     }
 
+    fn extract_instance_id(&self, block_type: &str) -> Option<String> {
+        // Extract instance ID from block_type
+        // Heuristic: if contains "inst-" prefix, assume text instance
+        if block_type.starts_with("inst-") {
+            return Some(block_type.to_string());
+        }
+        // Or if format is "Type:inst-123"
+        if let Some(last) = block_type.split(':').last() {
+            if last.starts_with("inst-") {
+                return Some(last.to_string());
+            }
+        }
+        None
+    }
+
     pub fn sync(&self, version_from: ClientState) -> Result<Vec<BlockChange>> {
         let dirty_indices = self.doc.dirty_blocks(version_from);
         let root = self.doc.list();
@@ -134,6 +149,11 @@ impl BlockStore {
                     )?;
                 }
 
+
+                // Record instance placement for this block (split/join tracking)
+                if let Some(instance_id) = self.extract_instance_id(&block.block_type) {
+                    let _ = self.record_placement(&instance_id, block_id);
+                }
                 changes.push(BlockChange {
                     block_id,
                     is_new: !exists,

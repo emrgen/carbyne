@@ -146,40 +146,60 @@ impl Doc {
         }
         false
     }
-    /// Find which blocks in root list changed since the given state.
-    /// Returns vector of block indices (positions in root list).
-    /// 
-    /// Useful for virtual rendering: determine which blocks need re-render.
+    /// Find which top-level blocks changed since the given state.
+    /// A block is a direct child of a top-level list (a list whose parent is
+    /// `None` or the doc root map). Returns block positions in that list,
+    /// sorted and deduped. Positions index the list's full child set
+    /// (same space as `NList::get`), so a deleted block still has a position.
+    ///
+    /// Cost: O(changed items × tree depth), independent of document size.
     pub fn dirty_blocks(&self, state: impl Into<ClientState>) -> Vec<usize> {
         let state_ref = state.into();
         let store = self.store.borrow();
-        
-        let mut dirty = Vec::new();
-        let root_list = &self.root;
-        
-        // Get all changes since state
-        let mut changed_since = std::collections::HashSet::new();
-        
+        let root_id = self.root.id();
+
+        let mut dirty: Vec<usize> = Vec::new();
+
+        // position of the top-level block containing `item`, if any
+        let block_pos = |item: Type| -> Option<usize> {
+            let mut cur = item;
+            loop {
+                let parent = cur.parent()?;
+                let top = match parent.parent() {
+                    None => true,
+                    Some(gp) => gp.id() == root_id,
+                };
+                if top {
+                    return parent
+                        .as_list()
+                        .map(|l| l.index_of(&cur))
+                        .filter(|i| *i >= 0)
+                        .map(|i| i as usize);
+                }
+                cur = parent;
+            }
+        };
+
         for (_client_id, changes) in store.changes.iter() {
             for change in changes.iter() {
-                let change_id = change.id();
-                if state_ref.state.get(&change_id.client).map_or(true, |clock| clock < &change_id.clock) {
-                    changed_since.insert(change_id);
+                let seen = state_ref
+                    .state
+                    .get(&change.client)
+                    .map_or(false, |clock| *clock >= change.end);
+                if seen {
+                    continue;
+                }
+                for item in store.items.get_by_range(*change) {
+                    dirty.extend(block_pos(item));
+                }
+                for del in store.deletes.get_by_range(*change) {
+                    dirty.extend(store.find(&del.target()).and_then(block_pos));
                 }
             }
         }
-        
-        if changed_since.is_empty() {
-            return dirty;
-        }
-        
-        // Scan root list for dirty blocks
-        for i in 0..root_list.size() {
-            if let Some(_block) = root_list.get(i as usize) {
-                dirty.push(i as usize);
-            }
-        }
-        
+
+        dirty.sort_unstable();
+        dirty.dedup();
         dirty
     }
 
