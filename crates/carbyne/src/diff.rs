@@ -363,6 +363,7 @@ mod test {
     use crate::diff::Diff;
     use crate::doc::Doc;
     use crate::encoder::{Encode, Encoder};
+    use crate::item::Any;
     use crate::state::ClientState;
 
     #[test]
@@ -376,6 +377,19 @@ mod test {
         doc.set("props", doc.map());
         doc.set("k1", doc.atom("fe"));
         doc.set("k2", doc.list());
+        // Embed: every Any shape. Used to encode nothing (silent loss).
+        doc.set(
+            "embed",
+            doc.atom(Any::Map(vec![
+                ("n".into(), Any::I64(-7)),
+                ("f".into(), Any::F64(1.5)),
+                ("u".into(), Any::U32(9)),
+                ("s".into(), Any::String("x".into())),
+                ("b".into(), Any::Binary(vec![0, 255])),
+                ("a".into(), Any::Array(vec![Any::True, Any::Null])),
+                ("kv".into(), Any::KV(vec![("k".into(), "v".into())])),
+            ])),
+        );
 
         // committed change + list with left/right links + a delete: this path used to
         // panic with "decoder: out of bounds" because encode/decode item disagreed

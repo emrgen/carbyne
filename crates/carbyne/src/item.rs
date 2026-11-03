@@ -1340,10 +1340,14 @@ impl Encode for Content {
                 e.string(s)
             }
             Self::Types(_) => {
-                // e.array(t)
+                // Containers never store Types in ItemData: `content()` derives it from the
+                // item tree, and children travel as their own items. Reaching here means a
+                // caller stuffed a derived value back into the store.
+                unreachable!("Content::Types is derived, never stored or encoded")
             }
-            Self::Embed(_) => {
-                // a.encode(e)
+            Self::Embed(a) => {
+                e.u8(ContentFlags::EMBED.bits());
+                a.encode(e, ctx)
             }
             Self::Doc(d) => {
                 e.u8(ContentFlags::DOC.bits());
@@ -1369,19 +1373,8 @@ impl Decode for Content {
             0x00 => Ok(Self::Mark(MarkContent::decode(d, ctx)?)),
             0x01 => Ok(Self::Binary(d.bytes()?)),
             0x02 => Ok(Self::String(d.string()?)),
-            0x03 => {
-                let len = d.u32()? as usize;
-                let mut types = vec![];
-                for _ in 0..len {
-                    types.push(Type::decode(d, ctx)?);
-                }
-                Ok(Self::Types(types))
-            }
-            0x10 => {
-                // let any = Any::decode(d, ctx)?;
-                // Ok(Self::Embed(any))
-                Ok(Self::Null)
-            }
+            0x03 => Err("Content::Types is not a wire type".into()),
+            0x10 => Ok(Self::Embed(Any::decode(d, ctx)?)),
             0x11 => {
                 let doc = DocProps::decode(d, ctx)?;
                 Ok(Self::Doc(doc))
@@ -1596,123 +1589,140 @@ bitflags! {
         const BINARY = 0x0E;
         const ARRAY = 0x0F;
         const MAP = 0x10;
+        const KV = 0x11;
     }
 }
 
 impl Encode for Any {
     fn encode<T: Encoder>(&self, e: &mut T, ctx: &mut EncodeContext) {
+        // ponytail: scalars are widened to u64 big-endian; varints (#9) shrink this later
         match self {
-            Any::Null => {
-                e.u8(AnyFlags::NULL.bits());
-            }
-            Any::True => {
-                e.u8(AnyFlags::TRUE.bits());
-            }
-            Any::False => {
-                e.u8(AnyFlags::FALSE.bits());
-            }
-            Any::F32(_) => {
+            Any::Null => e.u8(AnyFlags::NULL.bits()),
+            Any::True => e.u8(AnyFlags::TRUE.bits()),
+            Any::False => e.u8(AnyFlags::FALSE.bits()),
+            Any::F32(v) => {
                 e.u8(AnyFlags::FLOAT32.bits());
-                // e.f32(*d);
+                e.u32(v.to_bits())
             }
-            Any::F64(d_) => {
+            Any::F64(v) => {
                 e.u8(AnyFlags::FLOAT64.bits());
-                // e.f64(*d);
+                e.u64(v.to_bits())
             }
-            Any::I8(_) => {}
-            Any::I16(_) => {}
-            Any::I32(_) => {}
-            Any::I64(_) => {}
-            Any::U8(_) => {}
-            Any::U16(_) => {}
-            Any::U32(_) => {}
-            Any::U64(_) => {}
-            Any::String(_) => {}
-            Any::Binary(_) => {}
-            Any::Array(_) => {}
-            Any::Map(_) => {}
-            Any::KV(_) => {}
+            Any::I8(v) => {
+                e.u8(AnyFlags::INT8.bits());
+                e.u8(*v as u8)
+            }
+            Any::I16(v) => {
+                e.u8(AnyFlags::INT16.bits());
+                e.u16(*v as u16)
+            }
+            Any::I32(v) => {
+                e.u8(AnyFlags::INT32.bits());
+                e.u32(*v as u32)
+            }
+            Any::I64(v) => {
+                e.u8(AnyFlags::INT64.bits());
+                e.u64(*v as u64)
+            }
+            Any::U8(v) => {
+                e.u8(AnyFlags::UINT8.bits());
+                e.u8(*v)
+            }
+            Any::U16(v) => {
+                e.u8(AnyFlags::UINT16.bits());
+                e.u16(*v)
+            }
+            Any::U32(v) => {
+                e.u8(AnyFlags::UINT32.bits());
+                e.u32(*v)
+            }
+            Any::U64(v) => {
+                e.u8(AnyFlags::UINT64.bits());
+                e.u64(*v)
+            }
+            Any::String(s) => {
+                e.u8(AnyFlags::STRING.bits());
+                e.string(s)
+            }
+            Any::Binary(b) => {
+                e.u8(AnyFlags::BINARY.bits());
+                e.bytes(b)
+            }
+            Any::Array(a) => {
+                e.u8(AnyFlags::ARRAY.bits());
+                e.u32(a.len() as u32);
+                for v in a {
+                    v.encode(e, ctx);
+                }
+            }
+            Any::Map(m) => {
+                e.u8(AnyFlags::MAP.bits());
+                e.u32(m.len() as u32);
+                for (k, v) in m {
+                    e.string(k);
+                    v.encode(e, ctx);
+                }
+            }
+            Any::KV(kv) => {
+                e.u8(AnyFlags::KV.bits());
+                e.u32(kv.len() as u32);
+                for (k, v) in kv {
+                    e.string(k);
+                    e.string(v);
+                }
+            }
         }
     }
 }
 
 impl Decode for Any {
-    fn decode<T: Decoder>(d: &mut T, _ctx: &DecodeContext) -> Result<Self, String>
+    fn decode<T: Decoder>(d: &mut T, ctx: &DecodeContext) -> Result<Self, String>
     where
         Self: Sized,
     {
         let flags = d.u8()?;
-        match flags {
-            0x00 => Ok(Self::Null),
-            0x01 => Ok(Self::True),
-            0x02 => Ok(Self::False),
-            0x03 => {
-                // let f = d.f32()?;
-                // Ok(Self::Float32(f))
-                Ok(Self::Null)
-            }
-            0x04 => {
-                // let f = d.f64()?;
-                // Ok(Self::Float64(f))
-                Ok(Self::Null)
-            }
-            0x05 => {
-                // let i = d.i8()?;
-                // Ok(Self::Int8(i))
-                Ok(Self::Null)
-            }
-            0x06 => {
-                // let i = d.i16()?;
-                // Ok(Self::Int16(i))
-                Ok(Self::Null)
-            }
-            0x07 => {
-                // let i = d.i32()?;
-                // Ok(Self::Int32(i))
-                Ok(Self::Null)
-            }
-            0x08 => {
-                // let i = d.i64()?;
-                // Ok(Self::Int64(i))
-                Ok(Self::Null)
-            }
-            0x09 => {
-                // let u = d.u8()?;
-                // Ok(Self::Uint8(u))
-                Ok(Self::Null)
-            }
-            0x0A => {
-                // let u = d.u16()?;
-                // Ok(Self::Uint16(u))
-                Ok(Self::Null)
-            }
-            0x0B => {
-                // let u = d.u32()?;
-                // Ok(Self::Uint32(u))
-                Ok(Self::Null)
-            }
-            0x0C => {
-                // let u = d.u64()?;
-                // Ok(Self::Uint64(u))
-                Ok(Self::Null)
-            }
-            0x0D => {
-                // let s = d.string()?;
-                // Ok(Self::String(s))
-                Ok(Self::Null)
-            }
-            0x0E => {
-                // let b = d.bytes()?;
-                // Ok(Self::Binary(b))
-                Ok(Self::Null)
-            }
+        Ok(match flags {
+            0x00 => Self::Null,
+            0x01 => Self::True,
+            0x02 => Self::False,
+            0x03 => Self::F32(f32::from_bits(d.u32()?)),
+            0x04 => Self::F64(f64::from_bits(d.u64()?)),
+            0x05 => Self::I8(d.u8()? as i8),
+            0x06 => Self::I16(d.u16()? as i16),
+            0x07 => Self::I32(d.u32()? as i32),
+            0x08 => Self::I64(d.u64()? as i64),
+            0x09 => Self::U8(d.u8()?),
+            0x0A => Self::U16(d.u16()?),
+            0x0B => Self::U32(d.u32()?),
+            0x0C => Self::U64(d.u64()?),
+            0x0D => Self::String(d.string()?),
+            0x0E => Self::Binary(d.bytes()?),
             0x0F => {
-                panic!("Array not implemented");
+                let len = d.u32()? as usize;
+                let mut a = Vec::with_capacity(len.min(1 << 16));
+                for _ in 0..len {
+                    a.push(Any::decode(d, ctx)?);
+                }
+                Self::Array(a)
             }
-            _ => {
-                panic!("Map not implemented");
+            0x10 => {
+                let len = d.u32()? as usize;
+                let mut m = Vec::with_capacity(len.min(1 << 16));
+                for _ in 0..len {
+                    m.push((d.string()?, Any::decode(d, ctx)?));
+                }
+                Self::Map(m)
             }
-        }
+            0x11 => {
+                let len = d.u32()? as usize;
+                let mut kv = Vec::with_capacity(len.min(1 << 16));
+                for _ in 0..len {
+                    kv.push((d.string()?, d.string()?));
+                }
+                Self::KV(kv)
+            }
+            _ => return Err(format!("Invalid any flags: {}", flags)),
+        })
     }
 }
 

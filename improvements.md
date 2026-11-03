@@ -38,7 +38,7 @@ Summary: cbdocs design is sound and matches this audit. The crate that was suppo
 | 7  | Per-row `SELECT 1` then INSERT/UPDATE                                      | `lib.rs:98-111`                                               | 2× statements.                                                                                                   |
 | 8  | No `journal_mode=WAL` / `synchronous=NORMAL`                               | `lib.rs:60-71`, `storage.rs:29-51`                            | fsync per txn.                                                                                                   |
 | 9  | Fixed-width uncompressed codec; `Diff` round-trip panics                   | `codec_v1.rs:64-90,155` (old)                                 | 3–5× egress. Round-trip + panic **DONE**, see below. Varints not done.                                           |
-| 10 | `Content::Types`/`Embed` encode nothing                                    | `item.rs:1337-1342`                                           | Silent data loss. Blocks GC tier ≥2 and any disk format.                                                         |
+| 10 | `Content::Types`/`Embed` encode nothing                                    | `item.rs:1337-1342` (old)                                     | Silent data loss. **DONE**: `Embed` + full `Any` codec; `Types` is derived-only, now `unreachable!`/`Err`.       |
 | 11 | `diff()` scans all items + changes per client                              | `store.rs:1100-1116`, `change.rs:458-475`                     | O(history) per sync. perf P0.                                                                                    |
 | 12 | carbyne-db lamport `u64` instead of VV                                     | `instance.rs`, `message.rs` (old)                             | **DONE** with #2: `DbInstance::version() -> ClientState`, wire carries `ClientState::to_bytes()`.                |
 
@@ -137,7 +137,7 @@ Reconciled with `perf/README.md` §Recommended work order and `db/README.md` §I
 1. ~~**#1** `dirty_blocks`~~ done.
 2. **#8 + #7** WAL pragma + upsert in carbyne-blocks. Config-level.
 3. ~~**#2** carbyne-db append-only + `ClientState` (#12)~~ done.
-4. ~~**#9** `Diff` round-trip~~ done. **#10** `Types`/`Embed` encoding, then varints, still open.
+4. ~~**#9** `Diff` round-trip~~ done. ~~**#10** `Types`/`Embed` encoding~~ done (`item.rs` `Any` encode/decode, all 17 shapes; `diff::test::test_encode_decode_diff` covers an `Any::Map` embed). Varints still open.
 5. **#11** Range-select in `ItemStore::diff` / `ChangeStore::diff` (perf P0). Use `IdRangeMap` (`persist.rs:29`) as the index.
 6. **#4** Persist `DocStoreData` snapshot + op tail; hot-doc cache with eviction. Unlocks the 20 GiB → 200 MiB RAM claim and GC tier 2/3.
 7. **#5** Delete the fake archive or implement it against the sealed-block design.
