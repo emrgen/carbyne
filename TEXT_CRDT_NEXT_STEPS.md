@@ -227,4 +227,44 @@ fn extract_text_ops(&self, block_id: usize) -> Vec<CrdtTextOp> {
 4. Ship v1 (optional ops log, dedup only)
 5. Iterate: instance tracking → split/join support
 
-**Low-hanging fruit**: Just add `crdt_text_ops` with UNIQUE constraint. Dedup + audit trail. Split/join tracking is optional phase 2.
+
+---
+
+## CLARIFICATION: Do You Actually Need crdt_text_ops?
+
+**Short answer: No, not for current Carbyne.**
+
+The hybrid design is useful when:
+1. Text split/joins across blocks (RGA instances span multiple blocks)
+2. Multi-client concurrent edits on same text (need dedup)
+3. Offline clients (resend detection)
+4. Compliance audit trail (log every keystroke)
+
+**Current Carbyne (EMRGen) has none of these:**
+- ✓ Each block owns its text (no sharing/split-join)
+- ✓ Single/few editors (no concurrent conflicts)
+- ✓ Materialized state is enough (no need for op log)
+- ✓ Block version number is sufficient consistency guarantee
+
+**So keep it simple:**
+```
+Client edits:
+  block.set("title", "hello") → doc.commit()
+
+Server sync:
+  dirty_blocks() → [123]
+  rebuild_text(123) → "hello"
+  UPDATE blocks SET content="hello", version=?
+  ✓ Done
+
+No ops table needed.
+```
+
+**When to add ops table:**
+Only if you later need:
+- Multi-client text editing (conflicts need RGA dedup)
+- Text split/join at RGA level (instances across blocks)
+- Offline-first (resend detection)
+- Audit compliance (keystroke history)
+
+Until then: Carbyne's current model is already optimal.

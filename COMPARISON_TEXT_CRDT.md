@@ -327,3 +327,50 @@ This gives you:
 - Correctness of Blocktree (instance tracking)
 
 Estimated implementation: **~200 lines** in carbyne-blocks (text op append + instance tracking in sync).
+
+---
+
+## PRACTICAL CAVEAT: When Do You Actually Need the Hybrid?
+
+**For EMRGen (current Carbyne):** Not yet.
+
+**Why:**
+- Blocks own their text (no RGA split/join across blocks)
+- Single editor per workspace (no concurrent conflicts)
+- Materialized `blocks.content` is the source of truth
+- Block version number = all changes are consistent
+
+**Current workflow (zero overhead):**
+```
+Client: block.set("title", "hello")
+        doc.commit()
+
+Server: dirty_blocks() → [123]
+        rebuild_text(123) → "hello"
+        UPDATE blocks SET content="hello", version=42
+        ✓ Done
+```
+
+**Add crdt_text_ops ONLY when:**
+1. **Multi-client concurrent edits** on same text
+   - Client A inserts at pos 5
+   - Client B inserts at pos 3
+   - Need RGA + dedup to resolve conflicts
+   
+2. **Text split/join** at RGA level
+   - Same text instance spans multiple blocks
+   - Need crdt_instance_placements to track slices
+   
+3. **Offline-first sync**
+   - Client goes offline, resends ops
+   - Need UNIQUE constraint for dedup
+   
+4. **Compliance audit trail**
+   - Must log every keystroke (not just final state)
+   - crdt_text_ops = immutable operation history
+
+**Carbyne TODAY:** None of these apply.
+
+**Carbyne FUTURE:** Maybe #1 + #2 if you add multi-user editing.
+
+**Recommendation:** Keep it simple. Materialize to `blocks.content`. Add ops table when you hit the specific problem it solves, not before.
