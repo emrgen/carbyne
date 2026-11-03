@@ -11,11 +11,12 @@ pub use carbyne::{Doc, Type, ClientState};
 
 pub mod storage;
 pub mod archive_job;
+pub mod table_pool;
 pub mod s3_backend;
 
 // Re-export for convenience
 pub use storage::SessionStore;
-pub use archive_job::{ArchiveJob, ArchiveConfig};
+pub use table_pool::TablePool;
 pub use s3_backend::{S3Backend, S3Config};
 
 #[derive(Error, Debug)]
@@ -36,6 +37,7 @@ pub type Result<T, E = BlockError> = std::result::Result<T, E>;
 pub struct Block {
     pub id: usize,
     pub parent_id: Option<usize>,
+    pub table_id: u32,              // Immutable tag ID (from TablePool)
     pub block_type: String,
     pub content: String,
     pub version: Vec<u8>,
@@ -55,6 +57,7 @@ pub struct BlockStore {
     doc: Arc<Doc>,
     db: Mutex<Connection>,
     cache: Mutex<LruCache<usize, Block>>,
+    table_pool: TablePool,  // Immutable tag interning
 }
 
 impl BlockStore {
@@ -64,6 +67,7 @@ impl BlockStore {
             "CREATE TABLE IF NOT EXISTS blocks (
                 id INTEGER PRIMARY KEY,
                 parent_id INTEGER,
+                table_id INTEGER NOT NULL DEFAULT 0,
                 block_type TEXT NOT NULL,
                 content TEXT NOT NULL,
                 version BLOB NOT NULL,
@@ -71,6 +75,7 @@ impl BlockStore {
                 updated_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_parent_id ON blocks(parent_id);
+            CREATE INDEX IF NOT EXISTS idx_table_id ON blocks(table_id);
             CREATE INDEX IF NOT EXISTS idx_updated_at ON blocks(updated_at);",
         )?;
 
@@ -78,6 +83,7 @@ impl BlockStore {
             doc,
             db: Mutex::new(conn),
             cache: Mutex::new(LruCache::new(NonZeroUsize::new(1000).unwrap())),
+            table_pool: TablePool::new(),
         })
     }
 
@@ -105,13 +111,13 @@ impl BlockStore {
 
                 if exists {
                     tx.execute(
-                        "UPDATE blocks SET parent_id = ?, block_type = ?, content = ?, version = ?, updated_at = ? WHERE id = ?",
-                        params![block.parent_id, &block.block_type, &block.content, &block.version, now, block_id],
+                        "UPDATE blocks SET parent_id = ?, table_id = ?, block_type = ?, content = ?, version = ?, updated_at = ? WHERE id = ?",
+                        params![block.parent_id, block.table_id, &block.block_type, &block.content, &block.version, now, block_id],
                     )?;
                 } else {
                     tx.execute(
-                        "INSERT INTO blocks (id, parent_id, block_type, content, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        params![block_id, block.parent_id, &block.block_type, &block.content, &block.version, now, now],
+                        "INSERT INTO blocks (id, parent_id, table_id, block_type, content, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        params![block_id, block.parent_id, block.table_id, &block.block_type, &block.content, &block.version, now, now],
                     )?;
                 }
 
@@ -141,18 +147,20 @@ impl BlockStore {
         let db = self.db.lock().unwrap();
         let block = db
             .query_row(
-                "SELECT id, parent_id, block_type, content, version, created_at, updated_at FROM blocks WHERE id = ?",
+                "SELECT id, parent_id, table_id, block_type, content, version, created_at, updated_at FROM blocks WHERE id = ?",
                 [id],
                 |row| {
                     Ok(Block {
-                        id: row.get(0)?,
-                        parent_id: row.get(1)?,
-                        block_type: row.get(2)?,
-                        content: row.get(3)?,
-                        version: row.get(4)?,
-                        created_at: row.get(5)?,
-                        updated_at: row.get(6)?,
-                    })
+                    id: row.get(0)?,
+                    parent_id: row.get(1)?,
+                    table_id: row.get(2)?,
+                    block_type: row.get(3)?,
+                    content: row.get(4)?,
+                    version: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    created_at: row.get(6)?,
+                })
                 },
             )
             .optional()?
@@ -170,7 +178,7 @@ impl BlockStore {
         let db = self.db.lock().unwrap();
         let placeholders = vec!["?"; ids.len()].join(",");
         let query = format!(
-            "SELECT id, parent_id, block_type, content, version, created_at, updated_at FROM blocks WHERE id IN ({}) ORDER BY id",
+            "SELECT id, parent_id, table_id, block_type, content, version, created_at, updated_at FROM blocks WHERE id IN ({}) ORDER BY id",
             placeholders
         );
 
@@ -180,11 +188,14 @@ impl BlockStore {
                 Ok(Block {
                     id: row.get(0)?,
                     parent_id: row.get(1)?,
-                    block_type: row.get(2)?,
-                    content: row.get(3)?,
-                    version: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    table_id: row.get(2)?,
+                    block_type: row.get(3)?,
+                    content: row.get(4)?,
+                    version: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -200,22 +211,82 @@ impl BlockStore {
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(children)
     }
+    /// Query blocks by immutable table_id. O(log n) via index.
+    pub fn get_blocks_by_tag(&self, table_id: u32) -> Result<Vec<Block>> {
+        let db = self.db.lock().unwrap();
+        let mut stmt = db.prepare(
+            "SELECT id, parent_id, table_id, block_type, content, version, created_at, updated_at FROM blocks WHERE table_id = ? ORDER BY id"
+        )?;
+        let blocks = stmt
+            .query_map([table_id], |row| {
+                Ok(Block {
+                    id: row.get(0)?,
+                    parent_id: row.get(1)?,
+                    table_id: row.get(2)?,
+                    block_type: row.get(3)?,
+                    content: row.get(4)?,
+                    version: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(blocks)
+    }
+
+    /// Query blocks by multiple immutable table_ids. O(log n) via index.
+    pub fn get_blocks_by_tags(&self, table_ids: &[u32]) -> Result<Vec<Block>> {
+        if table_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let db = self.db.lock().unwrap();
+        let placeholders = vec!["?"; table_ids.len()].join(",");
+        let query = format!(
+            "SELECT id, parent_id, table_id, block_type, content, version, created_at, updated_at FROM blocks WHERE table_id IN ({}) ORDER BY id",
+            placeholders
+        );
+
+        let mut stmt = db.prepare(&query)?;
+        let blocks = stmt
+            .query_map(rusqlite::params_from_iter(table_ids.iter()), |row| {
+                Ok(Block {
+                    id: row.get(0)?,
+                    parent_id: row.get(1)?,
+                    table_id: row.get(2)?,
+                    block_type: row.get(3)?,
+                    content: row.get(4)?,
+                    version: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(blocks)
+    }
 
     pub fn all_blocks(&self) -> Result<Vec<Block>> {
         let db = self.db.lock().unwrap();
         let mut stmt = db.prepare(
-            "SELECT id, parent_id, block_type, content, version, created_at, updated_at FROM blocks ORDER BY id"
+            "SELECT id, parent_id, table_id, block_type, content, version, created_at, updated_at FROM blocks ORDER BY id"
         )?;
         let blocks = stmt
             .query_map([], |row| {
                 Ok(Block {
                     id: row.get(0)?,
                     parent_id: row.get(1)?,
-                    block_type: row.get(2)?,
-                    content: row.get(3)?,
-                    version: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    table_id: row.get(2)?,
+                    block_type: row.get(3)?,
+                    content: row.get(4)?,
+                    version: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -223,7 +294,7 @@ impl BlockStore {
     }
 
     fn rebuild_block(&self, block_id: usize, block_type: &Type, version: &ClientState, now: i64) -> Result<Block> {
-        let (block_type_str, content, parent_id) = match block_type {
+        let (block_type_str, content, parent_id, table_id) = match block_type {
             Type::Map(m) => {
                 let bt = "block".to_string();
                 let content = m
@@ -231,14 +302,34 @@ impl BlockStore {
                     .and_then(|t| Self::extract_text(&t))
                     .or_else(|| m.get("content").and_then(|t| Self::extract_text(&t)))
                     .unwrap_or_default();
-                (bt, content, None)
+                
+                // Extract immutable table from CRDT
+                let table_id = m
+                    .get("table")
+                    .and_then(|table_val| {
+                        match table_val {
+                            Type::Atom(_) => Some("atom".to_string()),
+                            Type::String(_) => Some("string".to_string()),
+                            Type::Text(_) => Some("text".to_string()),
+                            Type::List(_) => Some("list".to_string()),
+                            Type::Map(_) => Some("map".to_string()),
+                            Type::Identity => Some("identity".to_string()),
+                            Type::Move(_) => Some("move".to_string()),
+                            Type::Mark(_) => Some("mark".to_string()),
+                        }
+                    })
+                    .map(|table_name| self.table_pool.intern(&table_name))
+                    .unwrap_or_else(|| self.table_pool.intern("default"));
+                
+                (bt, content, None, table_id)
             }
-            _ => ("unknown".to_string(), String::new(), None),
+            _ => ("unknown".to_string(), String::new(), None, self.table_pool.intern("unknown")),
         };
 
         Ok(Block {
             id: block_id,
             parent_id,
+            table_id,
             block_type: block_type_str,
             content,
             version: bincode::serialize(version).unwrap_or_default(),

@@ -6,3 +6,5 @@ perf.data.old
 .idea
 
 flamegraph*carbyne-deploy.tar.gz
+/carbyne-deploy.tar.gz
+/notion_editor_readiness.md

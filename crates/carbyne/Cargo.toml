@@ -61,3 +61,7 @@ harness = false
 [[bench]]
 name = "block_dirty_tracking"
 harness = false
+
+[[bench]]
+name = "10k_docs_benchmark"
+harness = false
