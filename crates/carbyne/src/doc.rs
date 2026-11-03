@@ -9,7 +9,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::{Timestamp, Uuid};
 
 use crate::change::{sort_changes, ChangeData, ChangeId, ChangeStore};
-use crate::cycle::creates_cycle;
 use crate::dag::{ChangeNode, ChangeNodeFlags};
 use crate::decoder::{Decode, DecodeContext, Decoder};
 use crate::diff::Diff;
@@ -302,13 +301,10 @@ impl Doc {
                 // if applying the mover creates cycle, we need to skip it
                 if undo_movers.contains(change_id) {
                     for mover in store.movers.get_by_range(*change_id) {
-                        match (mover.item_ref().get_target(), mover.parent()) {
-                            (Some(target), Some(parent)) => {
-                                if !creates_cycle(&parent, &target) {
-                                    store.add_mover(target.id(), mover);
-                                }
-                            }
-                            _ => todo!(),
+                        if let (Some(target), Some(parent)) =
+                            (mover.item_ref().get_target(), mover.parent())
+                        {
+                            store.integrate_mover(&target, &parent, mover);
                         }
                     }
                 } else {
@@ -339,14 +335,10 @@ impl Doc {
             for change_id in &ready {
                 if mover_change_ids.contains(change_id) {
                     for mover in store.movers.get_by_range(*change_id) {
-                        match (mover.item_ref().get_target(), mover.parent()) {
-                            (Some(target), Some(parent)) => {
-                                if !creates_cycle(&parent, &target) {
-                                    target.item_ref().mark_moved();
-                                    store.add_mover(target.id(), mover);
-                                }
-                            }
-                            _ => {}
+                        if let (Some(target), Some(parent)) =
+                            (mover.item_ref().get_target(), mover.parent())
+                        {
+                            store.integrate_mover(&target, &parent, mover);
                         }
                     }
                 }

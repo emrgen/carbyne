@@ -61,13 +61,11 @@ impl NList {
         let mover: Type = NMove::new(id, target.clone(), self.store.clone()).into();
         self.store.upgrade().unwrap().borrow_mut().insert(mover.clone());
 
-        target.item_ref().mark_moved();
-
         self.store
             .upgrade()
             .unwrap()
             .borrow_mut()
-            .add_mover(target.id(), mover.clone());
+            .integrate_mover(target, &self.into(), mover.clone());
 
         self.insert(offset, mover);
     }

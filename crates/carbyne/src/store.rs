@@ -7,6 +7,7 @@ use crate::diff::Diff;
 use crate::doc::DocId;
 use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::frontier::Frontier;
+use crate::move_index::MoveIndex;
 use crate::id::{ClockTick, Id, IdRange, Split, WithId, WithIdRange};
 use crate::id_store::ClientIdStore;
 use crate::item::{ItemData, ItemKind, ItemRef};
@@ -122,9 +123,9 @@ pub(crate) struct DocStore {
     pub(crate) id_map: IdRangeMap,
     pub(crate) state: ClientState,
 
-    // moves for at target are serialized by the change dag
-    // the top most move is the last one which is active
-    pub(crate) moves: HashMap<Id, Vec<Type>>,
+    // mover-stack bookkeeping for Kleppmann-style move ops.
+    // See move_index::MoveIndex for the integration semantics.
+    pub(crate) moves: MoveIndex,
 
     pub(crate) items: TypeStore,
     pub(crate) movers: TypeStore,
@@ -231,43 +232,27 @@ impl DocStore {
     }
 
     pub(crate) fn add_mover(&mut self, target_id: Id, mover: Type) {
-        let entry = self.moves.entry(target_id).or_default();
-        // mark the last mover as moved so that it will be treated as an invisible item
-        if let Some(last) = entry.last() {
-            last.item_ref().mark_moved();
-        }
+        self.moves.push(target_id, mover);
+    }
 
-        mover.item_ref().mark_active();
-        entry.push(mover);
+    /// Integrate a mover against its target's new parent, used by every
+    /// move-integration path. See MoveIndex::integrate.
+    pub(crate) fn integrate_mover(&mut self, target: &Type, new_parent: &Type, mover: Type) -> bool {
+        self.moves.integrate(target, new_parent, mover)
     }
 
     /// remove the last mover for the given target id
     /// the last mover after remove is marked as unmoved
     pub(crate) fn remove_mover(&mut self, target_id: Id, mover: &Type) {
-        let mover_id = mover.id();
+        self.moves.pop(target_id, mover);
 
-        self.moves.entry(target_id).and_modify(|movers| {
-            movers.retain(|x| x.id() != mover_id);
-            if let Some(last) = movers.last() {
-                last.item_ref().unmark_moved();
-            }
-        });
-
-        let not_moved = self.moves.get(&target_id).map_or(false, |v| v.is_empty());
-
-        if not_moved {
-            self.find(&target_id).map(|target| {
+        if self.moves.is_empty_for(&target_id) {
+            if let Some(target) = self.find(&target_id) {
                 target.item_ref().unmark_moved();
-            });
+            }
         }
-
-        mover.item_ref().mark_inactive();
     }
 
-    #[inline]
-    pub(crate) fn get_move(&mut self, id: &Id) -> Option<Type> {
-        self.moves.get(id).and_then(|v| v.last()).cloned()
-    }
 
     #[inline]
     pub(crate) fn remove_deleter(&mut self, deleted: &DeleteItem) {

@@ -54,6 +54,7 @@ mod item;
 mod json;
 mod mark;
 mod natom;
+mod move_index;
 mod nlist;
 mod nmap;
 mod nmark;
