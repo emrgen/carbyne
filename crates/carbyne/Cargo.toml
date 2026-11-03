@@ -49,3 +49,7 @@ harness = false
 [[bench]]
 name = "realistic_edits"
 harness = false
+
+[[bench]]
+name = "notion_like_blocks"
+harness = false
