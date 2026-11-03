@@ -1,4 +1,4 @@
-# Text CRDT: Next Steps for Carbyne
+ Text CRDT: Next Steps for Carbyne
 
 ## Current State
 

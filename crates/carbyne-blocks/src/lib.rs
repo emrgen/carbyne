@@ -391,6 +391,138 @@ impl BlockStore {
         self.cache.lock().unwrap().clear();
         Ok(())
     }
+
+    /// Append RGA text operations to crdt_text_ops table
+    /// Dedup via UNIQUE constraint: (block_id, kind, id_seq, id_site)
+    pub fn append_text_ops(&self, block_id: usize, ops: Vec<CrdtTextOp>) -> Result<()> {
+        let db = self.db.lock().unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        for op in ops {
+            db.execute(
+                "INSERT INTO crdt_text_ops (block_id, instance_id, kind, id_seq, id_site, payload, applied_version, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    block_id,
+                    &op.instance_id,
+                    &op.kind,
+                    &op.id_seq,
+                    &op.id_site,
+                    &op.payload,
+                    &op.applied_version,
+                    now
+                ],
+            ).ok();  // Ignore UNIQUE constraint violations (resends)
+        }
+        Ok(())
+    }
+
+    /// Record that instance_id was placed in block_id
+    /// Used for split/join tracking
+    pub fn record_placement(&self, instance_id: &str, block_id: usize) -> Result<()> {
+        let db = self.db.lock().unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        // Insert or ignore if already exists
+        db.execute(
+            "INSERT OR IGNORE INTO crdt_instance_placements (instance_id, block_id, placed_at)
+             VALUES (?, ?, ?)",
+            params![instance_id, block_id, now],
+        )?;
+        Ok(())
+    }
+
+    /// Get all instances that were placed in given block_ids
+    /// Used to widen catch-up scope: blockIDs → instanceIDs
+    pub fn instances_in(&self, block_ids: &[usize]) -> Result<Vec<String>> {
+        if block_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let db = self.db.lock().unwrap();
+        let placeholders = std::iter::repeat("?")
+            .take(block_ids.len())
+            .collect::<Vec<_>>()
+            .join(",");
+
+        let query = format!(
+            "SELECT DISTINCT instance_id FROM crdt_instance_placements WHERE block_id IN ({})",
+            placeholders
+        );
+
+        let mut stmt = db.prepare(&query)?;
+        let instances = stmt
+            .query_map(rusqlite::params_from_iter(block_ids.iter()), |row| {
+                row.get(0)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(instances)
+    }
+
+    /// Get text ops for given instance_ids since applied_version
+    /// Used for catch-up: clients rebuild from ops
+    pub fn get_text_ops_since(&self, instance_ids: &[String], applied_version: &[u8]) -> Result<Vec<CrdtTextOp>> {
+        if instance_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let db = self.db.lock().unwrap();
+        let placeholders = std::iter::repeat("?")
+            .take(instance_ids.len())
+            .collect::<Vec<_>>()
+            .join(",");
+
+        let query = format!(
+            "SELECT seq, block_id, instance_id, kind, id_seq, id_site, payload, applied_version
+             FROM crdt_text_ops
+             WHERE instance_id IN ({})
+             AND applied_version > ?
+             ORDER BY seq",
+            placeholders
+        );
+
+        let mut stmt = db.prepare(&query)?;
+        let mut args: Vec<&dyn rusqlite::ToSql> = instance_ids.iter()
+            .map(|id| id as &dyn rusqlite::ToSql)
+            .collect();
+        args.push(&applied_version);
+
+        let ops = stmt
+            .query_map(rusqlite::params_from_iter(args), |row| {
+                Ok(CrdtTextOp {
+                    seq: row.get(0)?,
+                    block_id: row.get(1)?,
+                    instance_id: row.get(2)?,
+                    kind: row.get(3)?,
+                    id_seq: row.get(4)?,
+                    id_site: row.get(5)?,
+                    payload: row.get(6)?,
+                    applied_version: row.get(7)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(ops)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CrdtTextOp {
+    pub seq: i64,
+    pub block_id: usize,
+    pub instance_id: String,
+    pub kind: String,  // "insert", "delete", "split", "join"
+    pub id_seq: String,  // base64 Lamport clock
+    pub id_site: String,  // client ID
+    pub payload: Vec<u8>,  // opaque RGA operation
+    pub applied_version: Vec<u8>,  // serialized ClientState
 }
 
 
