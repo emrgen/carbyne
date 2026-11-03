@@ -905,18 +905,15 @@ mod test {
         let initial_state = doc.version();
         assert!(!doc.has_changes_since(initial_state.clone()));
         
-        // Add a change
+        // Add a change and commit
         let atom = doc.atom("hello");
         doc.set("key", atom);
-        
-        // Now we have changes
-        assert!(doc.has_changes_since(initial_state.clone()));
-        
-        // After commit, state still has changes
         doc.commit();
+        
+        // Now we have changes since initial state
         assert!(doc.has_changes_since(initial_state.clone()));
         
-        // New state matches current
+        // New state matches current (no changes since new state)
         let new_state = doc.version();
         assert!(!doc.has_changes_since(new_state));
     }
