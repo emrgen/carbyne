@@ -118,7 +118,7 @@ for block in blocks {
 
 | Scenario | Time | Notes |
 |----------|------|-------|
-| Detect changes (10k items) | 7 ms | `dirty_blocks()` |
+| Detect changes (10k items, 5 dirty) | 52 µs | `dirty_blocks()`, O(changed × depth) |
 | Apply diff (100 ops) | 2 ms | `apply()` |
 | Single block query (cached) | <1 µs | LRU hit |
 | Batch query (10 blocks) | 50 µs | One SQL query |
@@ -141,7 +141,7 @@ for block in blocks {
 ✅ **Virtual Rendering**
 - `dirty_blocks()` returns only changed items
 - Skip 99% of re-renders when outside viewport
-- O(n) but extremely fast (1 µs per item)
+- O(changed items × tree depth); 10k blocks, 5 dirty: ~50 µs
 
 ✅ **Materialized Blocks (Optional)**
 - SQLite persistence

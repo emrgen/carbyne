@@ -234,7 +234,7 @@ No conflicts: CRDT defines merge semantics.
 | Operation | Time | Items | Notes |
 |-----------|------|-------|-------|
 | `apply(&diff)` (100 ops) | 2 ms | 100 | Rebuild CRDT tree |
-| `dirty_blocks()` (10k items) | 7 ms | 10,000 | O(n) scan, fast |
+| `dirty_blocks()` (10k items, 5 dirty) | 52 µs | 10,000 | O(changed × depth), not O(n) |
 | `has_changes_since()` (quick check) | <1 ms | any | O(1) just scan clock |
 | `diff()` (compute changes) | 5 ms | 1000+ | Depends on # changes |
 | `get(index)` | <1 µs | any | O(1) list access |

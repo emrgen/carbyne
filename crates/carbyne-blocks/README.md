@@ -122,24 +122,26 @@ pub struct BlockChange {
 
 ### 1. Change Detection
 
-`doc.dirty_blocks(version)` scans the CRDT change log:
+`doc.dirty_blocks(version)` walks changes newer than `version`, resolves each
+changed item (insert or delete) up to its top-level block, and returns the
+sorted, deduped block positions:
 
 ```
 Change store: {
-  (client:1, clock:5): Insert("text"),   ← Peer edit
-  (client:1, clock:6): Insert("text"),
-  (client:2, clock:3): Delete(),
+  (client:1, clock:5): Insert("text") under block_3,
+  (client:1, clock:6): Insert("text") under block_5,
+  (client:2, clock:3): Delete(block_7),
 }
 
-version_before: {client:1 → 4}
+version_before: {client:1 → 4, client:2 → 3}
 
 dirty_blocks() finds:
-  - clock:5 > 4 ✓  
-  - clock:6 > 4 ✓
-  - Returns: [block_3, block_5]
+  - client:1 clock:5,6 > 4 ✓  → block_3, block_5
+  - client:2 clock:3 ≤ 3     ✗
+  - Returns: [3, 5]
 ```
 
-**Time:** O(1) quick path (has changes?) + O(n) scan (which blocks?) = ~7ms for 10k blocks.
+**Time:** O(changed items × tree depth). 10k blocks, 5 dirty: ~50 µs. No-op: <1 µs.
 
 ### 2. Materialization
 
