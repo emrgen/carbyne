@@ -789,8 +789,7 @@ impl Ord for Type {
 }
 impl PartialOrd for Type {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        // Some(self.cmp(other))
-        Option::from(Ordering::Equal)
+        Some(self.cmp(other))
     }
 }
 

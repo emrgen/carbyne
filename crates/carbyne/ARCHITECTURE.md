@@ -32,3 +32,5 @@ Internal `item_ref()` accessors borrow `&ItemRef`; clone explicitly only when an
 `Type::encode` passes borrowed `ItemData` to the encoder without copying payloads. As with `ItemRef::encode`, the immutable item borrow lasts through the encoder callback; callbacks must not mutably borrow the same item.
 
 Enum predicates use `matches!`; owned `Type`-to-`ItemRef` conversion reuses the common accessor. Size, range, splitting, JSON, and serialization retain per-variant dispatch because their semantics differ.
+
+`Type::partial_cmp` delegates to `Ord::cmp`, so comparison operators and sorting use the same ID ordering. Comparisons retain the existing store/client-map requirements of `Ord::cmp`.
