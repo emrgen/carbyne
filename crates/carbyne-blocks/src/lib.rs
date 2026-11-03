@@ -11,9 +11,12 @@ pub use carbyne::{Doc, Type, ClientState};
 
 pub mod storage;
 pub mod archive_job;
+pub mod s3_backend;
 
 // Re-export for convenience
 pub use storage::SessionStore;
+pub use archive_job::{ArchiveJob, ArchiveConfig};
+pub use s3_backend::{S3Backend, S3Config};
 
 #[derive(Error, Debug)]
 pub enum BlockError {
