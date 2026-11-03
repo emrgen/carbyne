@@ -223,11 +223,11 @@ impl DocStore {
         let items = self.items.get_by_range(range);
         items.iter().rev().for_each(|item| self.remove(&item.id()));
 
+        // undo uncommited deletes: clear the deleted flag on each delete's
+        // target and remove the tombstone itself, so a rolled-back delete
+        // does not leave the target permanently invisible.
         let deleted = self.deletes.get_by_range(range);
-        items
-            .iter()
-            .rev()
-            .for_each(|item| self.remove_deleter(&item.id()));
+        deleted.iter().rev().for_each(|item| self.remove_deleter(item));
     }
 
     pub(crate) fn add_mover(&mut self, target_id: Id, mover: Type) {
@@ -270,7 +270,12 @@ impl DocStore {
     }
 
     #[inline]
-    pub(crate) fn remove_deleter(&mut self, id: &Id) {}
+    pub(crate) fn remove_deleter(&mut self, deleted: &DeleteItem) {
+        if let Some(target) = self.find(&deleted.target()) {
+            target.item_ref().unmark_deleted();
+        }
+        self.deletes.remove(&deleted.id());
+    }
 
     #[inline]
     pub(crate) fn get_field_id(&mut self, field: &Field) -> u32 {

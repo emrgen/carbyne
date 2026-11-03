@@ -151,6 +151,11 @@ impl ItemRef {
     }
 
     #[inline]
+    pub(crate) fn unmark_deleted(&self) {
+        self.borrow_mut().unmark_deleted();
+    }
+
+    #[inline]
     pub(crate) fn mark_inactive(&self) {
         self.borrow_mut().mark_inactive();
     }

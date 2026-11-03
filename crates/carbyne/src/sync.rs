@@ -306,6 +306,21 @@ mod test {
         assert!(equal_docs(&doc1, &doc2), "move did not sync to doc2");
     }
 
+    #[test]
+    fn test_rollback_undoes_delete() {
+        let doc = Doc::default();
+        let a = doc.atom("a");
+        doc.set("a", a.clone());
+        doc.commit();
+        assert!(!a.is_deleted());
+
+        a.delete();
+        assert!(a.is_deleted(), "delete should mark the item deleted immediately");
+
+        doc.rollback();
+        assert!(!a.is_deleted(), "rollback should undo an uncommitted delete");
+    }
+
     // #[test]
     // fn test_inser
 }
