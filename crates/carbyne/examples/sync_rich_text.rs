@@ -1,4 +1,4 @@
-use nitro::{sync_docs, CloneDeep, RichText, SyncDirection, Type};
+use carbyne::{sync_docs, CloneDeep, RichText, SyncDirection, Type};
 
 fn main() {
     let mut t1 = RichText::new();

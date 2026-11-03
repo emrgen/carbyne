@@ -1,7 +1,7 @@
 use miniz_oxide::deflate::compress_to_vec;
-use nitro::codec_v1::EncoderV1;
-use nitro::encoder::{Encode, Encoder};
-use nitro::{print_yaml, sync_docs, CloneDeep, Doc, Type};
+use carbyne::codec_v1::EncoderV1;
+use carbyne::encoder::{Encode, Encoder};
+use carbyne::{print_yaml, sync_docs, CloneDeep, Doc, Type};
 
 fn main() {
     let doc = Doc::default();

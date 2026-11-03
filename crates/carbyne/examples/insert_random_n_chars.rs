@@ -1,9 +1,9 @@
 use miniz_oxide::deflate::compress_to_vec;
 use rand::{thread_rng, Rng};
 
-use nitro::codec_v1::EncoderV1;
-use nitro::encoder::{Encode, Encoder};
-use nitro::Doc;
+use carbyne::codec_v1::EncoderV1;
+use carbyne::encoder::{Encode, Encoder};
+use carbyne::Doc;
 
 fn main() {
     let mut indexes = Vec::new();

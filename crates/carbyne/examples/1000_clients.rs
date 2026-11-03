@@ -1,7 +1,7 @@
 use uuid::Error;
 
-use nitro::encoder::{Encode, Encoder};
-use nitro::Doc;
+use carbyne::encoder::{Encode, Encoder};
+use carbyne::Doc;
 
 fn insert_text(doc: &Doc, text: &str) {
     doc.update_client();

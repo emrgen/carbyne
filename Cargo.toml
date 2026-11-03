@@ -1,56 +1,10 @@
-[package]
-name = "nitro"
+[workspace]
+members = ["crates/carbyne"]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
 
-[features]
-default = ["uuid-client"]
-uuid-client = []
-#fugue = []
-nightly = []
-
 [profile.release]
-# or "z"
 opt-level = 3
-
-[dependencies]
-bimap = "0.6.3"
-log = "0.4.21"
-base64 = "0.22.1"
-serde = { version = "1.0.203", features = ["derive"] }
-indexmap = { version = "2.2.6", features = ["serde"] }
-bitflags = "2.5.0"
-miniz_oxide = "0.7.4"
-zstd = "0.13.1"
-fake = { version = "2.9.2", features = ["derive"] }
-byte-unit = "5.1.4"
-rand = "0.8.5"
-chrono = "0.4.38"
-fractional_index = "2.0.0"
-rand_chacha = "0.3.1"
-btree-plus-store = "0.2.1"
-btree-slab = "0.6.1"
-skiplist = "0.5.1"
-ptree = "0.5.2"
-serde_columnar = { version = "0.3.2", features = ["bench"] }
-flate2 = { version = "1.0.35", features = ["cloudflare_zlib"] }
-hashbrown = { version = "0.11.2", features = ["serde"] }
-rustc-hash = "2.1.1"
-ahash = "0.7.8"
-queues = "1.1.0"
-sha1 = "0.10.6"
-priority-queue = "2.5.0"
-tinyvec = "1.9.0"
-
-[dependencies.serde_json]
-version = "1.0"
-preserve_order = true
-
-[dependencies.serde_yaml]
-version = "0.9.34+deprecated"
-preserve_order = true
-
-[dependencies.uuid]
-version = "1.8.0"
-features = ["v4"]
-

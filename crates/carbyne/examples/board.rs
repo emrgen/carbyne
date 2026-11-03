@@ -1,7 +1,7 @@
 use uuid::Error;
 
-use nitro::{CloneDeep, Doc, equal_docs, print_yaml, sync_docs};
-use nitro::encoder::Encoder;
+use carbyne::{CloneDeep, Doc, equal_docs, print_yaml, sync_docs};
+use carbyne::encoder::Encoder;
 
 fn main() -> Result<(), Error> {
     let doc = Doc::default();

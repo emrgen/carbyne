@@ -1,4 +1,4 @@
-use nitro::{CloneDeep, Doc, Type};
+use carbyne::{CloneDeep, Doc, Type};
 
 fn main() {
     let doc1 = Doc::default();

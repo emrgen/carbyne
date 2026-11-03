@@ -1,34 +1,57 @@
-A high performance CRDT library.
+# Carbyne – CRDT Monorepo
 
-**Note**: This project is under active development. **NOT READY FOR PRODUCTION USE**
+High-performance CRDT library with pluggable algorithms.
 
-### Bench
+**Status**: Under development. Not for production.
+
+## Workspace Structure
 
 ```
-sudo sysctl kernel.perf_event_paranoid=3
-flamegraph -- cargo run --example huge_list
+carbyne/
+├── Cargo.toml           # Workspace root
+├── crates/
+│   └── carbyne/         # Main CRDT library
+│       ├── src/
+│       ├── examples/
+│       └── Cargo.toml
+└── README.md
 ```
 
-### Features
+## Building
 
-- [x] document
-- [x] list
-- [x] map
-- [x] test
-- [x] string
-- [x] atom
-- [x] mark
-- [x] move
-- [x] delete
-- [x] diff
-- [x] merge
-- [x] sync docs
-- [ ] sync move changes
-- [ ] undo/redo manager
+Requires Rust nightly (for `slice_take` feature).
 
-### TODO
+```bash
+cd carbyne
+rustup override set nightly
+cargo build --release
+```
 
-- [ ] use queue store for pending items instead of IdStore<T>
-- [ ] merge adjacent string with same marks
-- [ ] add tests with 100 users and docs
-- [ ] add tests for props update
+## Modules
+
+- **Core**: `doc`, `store`, `change` – document, item storage, change tracking
+- **Data Types**: `nmap`, `nlist`, `ntext`, `nstring`, `natom` – CRDT containers
+- **Algorithms**: `crdt_yata`, `crdt_fugue` – conflict resolution strategies
+- **Sync**: `sync`, `diff`, `codec_v1` – synchronization and serialization
+- **Indexing**: `index/` – B-tree, red-black tree, skip list
+- **Testing**: `examples/` – integration tests
+
+## Experiments
+
+Add new crates to `crates/` as needed:
+- `crates/carbyne-algo` – swappable algorithm layer (future)
+- `crates/carbyne-bindings` – language bindings (future)
+
+Update `Cargo.toml` members list and run `cargo build -w`.
+
+## Features
+
+- [x] Document model (map, list, text, atom)
+- [x] YATA algorithm
+- [x] Sync protocol (basic)
+- [x] Diff and merge
+- [ ] Undo/redo manager
+- [ ] Movable list/tree
+- [ ] Counter CRDT
+- [ ] Fugue algorithm
+- [ ] Time travel / version control

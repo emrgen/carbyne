@@ -1,6 +1,4 @@
 #![feature(slice_take)]
-#![feature(bstr)]
-// allow warnings for now to make it easier to work on this
 #![allow(warnings)]
 #![allow(unused_variables)]
 #![allow(unused_imports)]
