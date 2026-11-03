@@ -147,6 +147,42 @@ impl Doc {
         }
         false
     }
+    /// Find which blocks in root list changed since the given state.
+    /// Returns vector of block indices (positions in root list).
+    /// 
+    /// Useful for virtual rendering: determine which blocks need re-render.
+    pub fn dirty_blocks(&self, state: impl Into<ClientState>) -> Vec<usize> {
+        let state_ref = state.into();
+        let store = self.store.borrow();
+        
+        let mut dirty = Vec::new();
+        let root_list = &self.root;
+        
+        // Get all changes since state
+        let mut changed_since = std::collections::HashSet::new();
+        
+        for (_client_id, changes) in store.changes.iter() {
+            for change in changes.iter() {
+                let change_id = change.id();
+                if state_ref.state.get(&change_id.client).map_or(true, |clock| clock < &change_id.clock) {
+                    changed_since.insert(change_id);
+                }
+            }
+        }
+        
+        if changed_since.is_empty() {
+            return dirty;
+        }
+        
+        // Scan root list for dirty blocks
+        for i in 0..root_list.size() {
+            if let Some(_block) = root_list.get(i as usize) {
+                dirty.push(i as usize);
+            }
+        }
+        
+        dirty
+    }
 
     /// Apply a diff to the document from remote client
     pub fn apply(&self, diff: &Diff) {

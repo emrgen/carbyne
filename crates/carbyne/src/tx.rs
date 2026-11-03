@@ -8,8 +8,8 @@ use crate::bimapid::ClientId;
 use crate::crdt_yata::{integrate_yata, remove_yata};
 use crate::delete::DeleteItem;
 use crate::diff::Diff;
-use crate::id::WithId;
-use crate::item::{ItemData, ItemRef, Linked, StartEnd};
+use crate::id::{WithId, WithTarget};
+use crate::item::{Content, ItemData, ItemKind, ItemRef, Linked, StartEnd};
 use crate::print_yaml;
 use crate::queue_store::ClientQueueStore;
 use crate::store::{
@@ -219,7 +219,22 @@ impl Tx {
 
                 // println!("integrating: {:?}", data.id);
 
+                let move_target_id = if data.kind == ItemKind::Move {
+                    match &data.content {
+                        Content::Id(target_id) => Some(*target_id),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+
                 let item: Type = ItemRef::new(data.into(), self.store.clone()).into();
+
+                if let Some(target_id) = move_target_id {
+                    if let Some(target) = store.find(&target_id) {
+                        item.item_ref().set_target(target);
+                    }
+                }
 
                 let count = integrate_yata(
                     &client_map,
@@ -313,6 +328,15 @@ impl Tx {
             // println!("right");
             if !(self.ready.contains(&right_id) || store.contains(&right_id)) {
                 return false;
+            }
+        }
+
+        // a move item must wait until its target item is integrated
+        if data.kind == ItemKind::Move {
+            if let Content::Id(target_id) = &data.content {
+                if !(self.ready.contains(target_id) || store.contains(target_id)) {
+                    return false;
+                }
             }
         }
 

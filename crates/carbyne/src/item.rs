@@ -890,6 +890,13 @@ impl ItemData {
             deps.push(right_id.clone().into());
         }
 
+        // a move item depends on its target item being integrated first
+        if self.kind == ItemKind::Move {
+            if let Content::Id(target_id) = &self.content {
+                deps.push(target_id.clone());
+            }
+        }
+
         deps
     }
 

@@ -59,6 +59,7 @@ impl NList {
 
         let id = self.store.upgrade().unwrap().borrow_mut().next_id();
         let mover: Type = NMove::new(id, target.clone(), self.store.clone()).into();
+        self.store.upgrade().unwrap().borrow_mut().insert(mover.clone());
 
         target.item_ref().mark_moved();
 

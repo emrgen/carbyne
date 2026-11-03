@@ -53,3 +53,11 @@ harness = false
 [[bench]]
 name = "notion_like_blocks"
 harness = false
+
+[[bench]]
+name = "block_tree_dirty_tracking"
+harness = false
+
+[[bench]]
+name = "block_dirty_tracking"
+harness = false
