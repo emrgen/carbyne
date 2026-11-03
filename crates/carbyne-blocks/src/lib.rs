@@ -74,11 +74,31 @@ impl BlockStore {
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_parent_id ON blocks(parent_id);
             CREATE INDEX IF NOT EXISTS idx_table_id ON blocks(table_id);
-            CREATE INDEX IF NOT EXISTS idx_updated_at ON blocks(updated_at);",
-        )?;
+            CREATE INDEX IF NOT EXISTS idx_updated_at ON blocks(updated_at);
 
+            CREATE TABLE IF NOT EXISTS crdt_text_ops (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                block_id INTEGER NOT NULL,
+                instance_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                id_seq TEXT NOT NULL,
+                id_site TEXT NOT NULL,
+                payload BLOB NOT NULL,
+                applied_version BLOB NOT NULL,
+                created_at INTEGER NOT NULL,
+                UNIQUE(block_id, kind, id_seq, id_site)
+            );
+            CREATE INDEX IF NOT EXISTS idx_crdt_text_ops_block ON crdt_text_ops(block_id);
+            CREATE INDEX IF NOT EXISTS idx_crdt_text_ops_instance ON crdt_text_ops(instance_id);
+
+            CREATE TABLE IF NOT EXISTS crdt_instance_placements (
+                instance_id TEXT NOT NULL,
+                block_id INTEGER NOT NULL,
+                placed_at INTEGER NOT NULL,
+                PRIMARY KEY(instance_id, block_id)
+            );",
+        )?;
         Ok(BlockStore {
             doc,
             db: Mutex::new(conn),
@@ -159,7 +179,6 @@ impl BlockStore {
                     version: row.get(5)?,
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,
-                    created_at: row.get(6)?,
                 })
                 },
             )
@@ -194,8 +213,6 @@ impl BlockStore {
                     version: row.get(5)?,
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -226,8 +243,6 @@ impl BlockStore {
                     block_type: row.get(3)?,
                     content: row.get(4)?,
                     version: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,
                 })
@@ -261,8 +276,6 @@ impl BlockStore {
                     version: row.get(5)?,
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -285,8 +298,6 @@ impl BlockStore {
                     version: row.get(5)?,
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -304,6 +315,7 @@ impl BlockStore {
                     .unwrap_or_default();
                 
                 // Extract immutable table from CRDT
+                // Extract immutable table from CRDT
                 let table_id = m
                     .get("table")
                     .and_then(|table_val| {
@@ -314,8 +326,7 @@ impl BlockStore {
                             Type::List(_) => Some("list".to_string()),
                             Type::Map(_) => Some("map".to_string()),
                             Type::Identity => Some("identity".to_string()),
-                            Type::Move(_) => Some("move".to_string()),
-                            Type::Mark(_) => Some("mark".to_string()),
+                            _ => Some("other".to_string()),
                         }
                     })
                     .map(|table_name| self.table_pool.intern(&table_name))
