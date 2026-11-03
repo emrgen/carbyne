@@ -301,11 +301,7 @@ impl Doc {
                 // if applying the mover creates cycle, we need to skip it
                 if undo_movers.contains(change_id) {
                     for mover in store.movers.get_by_range(*change_id) {
-                        if let (Some(target), Some(parent)) =
-                            (mover.item_ref().get_target(), mover.parent())
-                        {
-                            store.integrate_mover(&target, &parent, mover);
-                        }
+                        store.integrate_mover_in_place(mover);
                     }
                 } else {
 
@@ -335,11 +331,7 @@ impl Doc {
             for change_id in &ready {
                 if mover_change_ids.contains(change_id) {
                     for mover in store.movers.get_by_range(*change_id) {
-                        if let (Some(target), Some(parent)) =
-                            (mover.item_ref().get_target(), mover.parent())
-                        {
-                            store.integrate_mover(&target, &parent, mover);
-                        }
+                        store.integrate_mover_in_place(mover);
                     }
                 }
             }

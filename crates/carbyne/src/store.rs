@@ -8,7 +8,7 @@ use crate::doc::DocId;
 use crate::encoder::{Encode, EncodeContext, Encoder};
 use crate::frontier::Frontier;
 use crate::move_index::MoveIndex;
-use crate::id::{ClockTick, Id, IdRange, Split, WithId, WithIdRange};
+use crate::id::{ClockTick, Id, IdRange, Split, WithId, WithIdRange, WithTarget};
 use crate::id_store::ClientIdStore;
 use crate::item::{ItemData, ItemKind, ItemRef};
 use crate::state::ClientState;
@@ -239,6 +239,19 @@ impl DocStore {
     /// move-integration path. See MoveIndex::integrate.
     pub(crate) fn integrate_mover(&mut self, target: &Type, new_parent: &Type, mover: Type) -> bool {
         self.moves.integrate(target, new_parent, mover)
+    }
+
+    /// Integrate a mover whose target and parent can both be read off
+    /// the mover item itself (its target was resolved during tx commit,
+    /// and its own position already has a parent). No-op if either is
+    /// missing. Used by redo and remote-apply integration, which both
+    /// otherwise had to repeat this same destructure before calling
+    /// integrate_mover.
+    pub(crate) fn integrate_mover_in_place(&mut self, mover: Type) -> bool {
+        match (mover.item_ref().get_target(), mover.parent()) {
+            (Some(target), Some(parent)) => self.integrate_mover(&target, &parent, mover),
+            _ => false,
+        }
     }
 
     /// remove the last mover for the given target id
