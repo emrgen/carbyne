@@ -402,13 +402,7 @@ impl DocStore {
 
         let deletes = self.deletes.diff(&state);
 
-        let mut clients = self.state.clients.clone();
-
-        for (_, client_id) in clients.iter() {
-            if (items.client_size(client_id) + deletes.client_size(client_id)) == 0 {
-                // clients.remove(client_id);
-            }
-        }
+        let clients = &self.state.clients;
 
         let changes = self.changes.diff(&state);
 

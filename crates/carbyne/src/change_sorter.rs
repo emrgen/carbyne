@@ -278,7 +278,7 @@ impl<V: Debug> Branch<V> {
         Some((pos, index))
     }
 
-    // TODO: this function is taking a lot of cycles during each insert
+    // Optimized: avoid Vec::insert() which is O(n) per call. Build cumulative sum in-place.
     #[inline]
     fn update_count(&mut self, start: usize) {
         let mut count = if start == 0 {
@@ -288,9 +288,13 @@ impl<V: Debug> Branch<V> {
         };
         for (index, child) in self.children[start..].iter().enumerate() {
             count += child.size();
-            self.counts.insert(start + index, count);
+            let target = start + index;
+            if target >= self.counts.len() {
+                self.counts.push(count);
+            } else {
+                self.counts[target] = count;
+            }
         }
-
         self.counts.truncate(self.children.len());
     }
 
