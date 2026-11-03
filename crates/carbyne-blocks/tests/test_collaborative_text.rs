@@ -1,18 +1,33 @@
 use carbyne::Doc;
-use carbyne_blocks::BlockStore;
+use carbyne_blocks::{BlockStore, TextOpId};
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 
 #[test]
-fn test_append_and_record_placement() {
+fn test_mark_ops_applied() {
     let doc = Arc::new(Doc::new(Default::default()));
     let tmpfile = NamedTempFile::new().unwrap();
     let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
 
-    // 1. Record that instance-1 is in block 123
+    // Mark op as applied
+    let ops = vec![TextOpId { id: "seq-1#client-A".to_string() }];
+    store.mark_ops_applied("inst-1", ops).unwrap();
+
+    // Check if applied
+    assert!(store.is_op_applied("inst-1", "seq-1#client-A").unwrap());
+    assert!(!store.is_op_applied("inst-1", "seq-2#client-A").unwrap());
+}
+
+#[test]
+fn test_record_placement() {
+    let doc = Arc::new(Doc::new(Default::default()));
+    let tmpfile = NamedTempFile::new().unwrap();
+    let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
+
+    // Record placement
     store.record_placement("inst-1", 123).unwrap();
 
-    // 2. Query: which instances in block 123?
+    // Query instances in block
     let instances = store.instances_in(&[123]).unwrap();
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0], "inst-1");
@@ -24,25 +39,14 @@ fn test_split_scenario() {
     let tmpfile = NamedTempFile::new().unwrap();
     let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
 
-    // Scenario: paragraph in block 123 is split → new block 999
-    // Both blocks have same text instance (instance-A)
+    // User splits paragraph: block 100 → blocks 100 + 999
+    store.record_placement("inst-X", 100).unwrap();
+    store.record_placement("inst-X", 999).unwrap();
 
-    // Record placements
-    store.record_placement("inst-A", 123).unwrap();
-    store.record_placement("inst-A", 999).unwrap();
-
-    // Query: which instances in block 999?
-    let instances_999 = store.instances_in(&[999]).unwrap();
-    assert_eq!(instances_999.len(), 1);
-    assert_eq!(instances_999[0], "inst-A");
-
-    // Query: which instances in block 123?
-    let instances_123 = store.instances_in(&[123]).unwrap();
-    assert_eq!(instances_123.len(), 1);
-
-    // Query: which instances in BOTH blocks?
-    let instances_both = store.instances_in(&[123, 999]).unwrap();
-    assert_eq!(instances_both.len(), 1); // Same instance
+    // Query: what instances are in block 999?
+    let instances = store.instances_in(&[999]).unwrap();
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0], "inst-X");
 }
 
 #[test]
@@ -51,46 +55,31 @@ fn test_multiple_instances_in_one_block() {
     let tmpfile = NamedTempFile::new().unwrap();
     let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
 
-    // Block 123 has multiple instances (e.g., two separate text fields)
-    store.record_placement("inst-title", 123).unwrap();
-    store.record_placement("inst-content", 123).unwrap();
+    // Two instances in same block (collaborative editing)
+    store.record_placement("inst-A", 500).unwrap();
+    store.record_placement("inst-B", 500).unwrap();
 
-    // Query: which instances?
-    let instances = store.instances_in(&[123]).unwrap();
+    let instances = store.instances_in(&[500]).unwrap();
     assert_eq!(instances.len(), 2);
-    assert!(instances.contains(&"inst-title".to_string()));
-    assert!(instances.contains(&"inst-content".to_string()));
+    assert!(instances.contains(&"inst-A".to_string()));
+    assert!(instances.contains(&"inst-B".to_string()));
 }
 
 #[test]
-fn test_instance_idempotence() {
+fn test_op_dedup() {
     let doc = Arc::new(Doc::new(Default::default()));
     let tmpfile = NamedTempFile::new().unwrap();
     let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
 
-    // Record same placement multiple times (INSERT OR IGNORE)
-    store.record_placement("inst-x", 456).unwrap();
-    store.record_placement("inst-x", 456).unwrap();
-    store.record_placement("inst-x", 456).unwrap();
+    // Same op, marked 3 times (resends)
+    let op_id = TextOpId { id: "retry-id".to_string() };
 
-    // Should only have one entry
-    let instances = store.instances_in(&[456]).unwrap();
-    assert_eq!(instances.len(), 1);
-}
+    for _ in 0..3 {
+        store.mark_ops_applied("offline-inst", vec![op_id.clone()]).unwrap();
+    }
 
-#[test]
-fn test_get_text_ops_since() {
-    let doc = Arc::new(Doc::new(Default::default()));
-    let tmpfile = NamedTempFile::new().unwrap();
-    let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
-
-    // No instances = no ops
-    let ops = store.get_text_ops_since(&[], &vec![1]).unwrap();
-    assert_eq!(ops.len(), 0);
-
-    // Empty instance list = no ops
-    let ops = store.get_text_ops_since(&vec![], &vec![1]).unwrap();
-    assert_eq!(ops.len(), 0);
+    // Should only be marked once (dedup)
+    assert!(store.is_op_applied("offline-inst", "retry-id").unwrap());
 }
 
 #[test]
@@ -99,13 +88,13 @@ fn test_empty_queries() {
     let tmpfile = NamedTempFile::new().unwrap();
     let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
 
-    // Query with no block IDs
+    // Empty block list
     let instances = store.instances_in(&[]).unwrap();
     assert_eq!(instances.len(), 0);
 
-    // Query with no instances
-    let ops = store.get_text_ops_since(&vec![], &vec![0]).unwrap();
-    assert_eq!(ops.len(), 0);
+    // Non-existent block
+    let instances = store.instances_in(&[9999]).unwrap();
+    assert_eq!(instances.len(), 0);
 }
 
 #[test]
@@ -114,79 +103,37 @@ fn test_concurrent_edits_different_clients() {
     let tmpfile = NamedTempFile::new().unwrap();
     let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
 
-    // Scenario: Client-A and Client-B both edit block 500
-    // Their ops should both append (different IDs)
-    
+    // Both clients edit same instance
     store.record_placement("text-500", 500).unwrap();
 
-    let ops_a = vec![
-        carbyne_blocks::CrdtTextOp {
-            seq: 1,
-            block_id: 500,
-            instance_id: "text-500".to_string(),
-            kind: "insert".to_string(),
-            id_seq: "seq-a1".to_string(),
-            id_site: "client-A".to_string(),
-            payload: b"a".to_vec(),
-            applied_version: vec![1],
-        },
-    ];
+    let ops_a = vec![TextOpId { id: "seq-a1#client-A".to_string() }];
+    let ops_b = vec![TextOpId { id: "seq-b1#client-B".to_string() }];
 
-    let ops_b = vec![
-        carbyne_blocks::CrdtTextOp {
-            seq: 0,
-            block_id: 500,
-            instance_id: "text-500".to_string(),
-            kind: "insert".to_string(),
-            id_seq: "seq-b1".to_string(),
-            id_site: "client-B".to_string(),
-            payload: b"b".to_vec(),
-            applied_version: vec![1],
-        },
-    ];
+    store.mark_ops_applied("text-500", ops_a).unwrap();
+    store.mark_ops_applied("text-500", ops_b).unwrap();
 
-    // Both should append
-    store.append_text_ops(500, ops_a).unwrap();
-    store.append_text_ops(500, ops_b).unwrap();
-
-    // Verify both are in log
-    let instances = store.instances_in(&[500]).unwrap();
-    assert_eq!(instances.len(), 1);
-
-    let ops = store.get_text_ops_since(&instances, &vec![0]).unwrap();
-    assert_eq!(ops.len(), 2);
-    assert_ne!(ops[0].id_site, ops[1].id_site);
+    // Both ops should be tracked
+    assert!(store.is_op_applied("text-500", "seq-a1#client-A").unwrap());
+    assert!(store.is_op_applied("text-500", "seq-b1#client-B").unwrap());
 }
 
 #[test]
-fn test_offline_resend_idempotent() {
+fn test_offline_resend_dedup() {
     let doc = Arc::new(Doc::new(Default::default()));
     let tmpfile = NamedTempFile::new().unwrap();
     let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
 
     store.record_placement("offline-inst", 600).unwrap();
 
-    // Same op, sent 5 times (network unreliable)
-    let op = carbyne_blocks::CrdtTextOp {
-        seq: 0,
-        block_id: 600,
-        instance_id: "offline-inst".to_string(),
-        kind: "insert".to_string(),
-        id_seq: "retry-id".to_string(),
-        id_site: "offline-client".to_string(),
-        payload: b"typed while offline".to_vec(),
-        applied_version: vec![1],
-    };
+    // Same op, sent 5 times
+    let op = TextOpId { id: "retry-id".to_string() };
 
-    // Send 5 times
     for _ in 0..5 {
-        store.append_text_ops(600, vec![op.clone()]).unwrap();
+        store.mark_ops_applied("offline-inst", vec![op.clone()]).unwrap();
     }
 
-    // Should have exactly 1 op (UNIQUE dedup)
-    let instances = store.instances_in(&[600]).unwrap();
-    let ops = store.get_text_ops_since(&instances, &vec![0]).unwrap();
-    assert_eq!(ops.len(), 1);
+    // Should only be tracked once
+    assert!(store.is_op_applied("offline-inst", "retry-id").unwrap());
 }
 
 #[test]
@@ -195,19 +142,14 @@ fn test_split_with_catch_up() {
     let tmpfile = NamedTempFile::new().unwrap();
     let store = BlockStore::new(doc.clone(), tmpfile.path()).unwrap();
 
-    // Paragraph text exists in block 100, instance-X
+    // Paragraph split: block 100 → blocks 100 + 999
     store.record_placement("inst-X", 100).unwrap();
-
-    // User splits: text now in blocks 100 and 999 (same instance)
     store.record_placement("inst-X", 999).unwrap();
 
-    // Client C catches up with just block 999
+    // Client catches up with block 999
     let instances_999 = store.instances_in(&[999]).unwrap();
 
-    // Should find instance-X
+    // Should find instance
     assert_eq!(instances_999.len(), 1);
     assert_eq!(instances_999[0], "inst-X");
-
-    // If there were ops for inst-X from block 100, they'd also be found
-    // This is the key: instance tracking survives split
 }

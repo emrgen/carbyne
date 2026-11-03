@@ -82,6 +82,10 @@ impl DbInstance {
 
         // Phase 3: apply ops to doc; Phase 2: placeholder
         *lamport += 1;
+
+        // Persist lamport checkpoint
+        self.changelog.snapshot(&_doc, *lamport)?;
+
         Ok(())
     }
 

@@ -1,5 +1,5 @@
 use crate::error::{DbError, Result};
-use rocksdb::{DB, Options};
+use rocksdb::{DB, Direction, IteratorMode, Options};
 use std::sync::Arc;
 
 pub struct Storage {
@@ -39,21 +39,23 @@ impl Storage {
 
     pub fn iter_keys_with_prefix(&self, prefix: &str) -> Result<Vec<(String, Vec<u8>)>> {
         let mut result = vec![];
-        let iter = self.db.iterator(rocksdb::IteratorMode::From(
-            prefix.as_bytes(),
-            rocksdb::Direction::Forward,
-        ));
+        let iter = self
+            .db
+            .iterator(IteratorMode::From(prefix.as_bytes(), Direction::Forward));
 
         for item in iter {
-        for item in iter {
-            let (key_bytes, value_bytes) = item;
-            let key_str = String::from_utf8_lossy(&key_bytes).to_string();
-            if !key_str.starts_with(prefix) {
-                break;
+            match item {
+                Ok((key_bytes, value_bytes)) => {
+                    let key_str = String::from_utf8_lossy(&key_bytes).to_string();
+                    if !key_str.starts_with(prefix) {
+                        break;
+                    }
+                    result.push((key_str, value_bytes.to_vec()));
+                }
+                Err(e) => {
+                    return Err(DbError::StorageError(format!("Iterator error: {}", e)));
+                }
             }
-            result.push((key_str, value_bytes.to_vec()));
-            }
-            result.push((key_str, value_bytes.to_vec()));
         }
 
         Ok(result)
