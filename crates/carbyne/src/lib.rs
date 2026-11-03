@@ -1,11 +1,14 @@
 #![feature(slice_take)]
-#![allow(warnings)]
+// ponytail: 450+ pre-existing unused_variables/imports/dead_code/mut/assignments
+// warnings are scaffolding/WIP noise across many files, not this fix's scope.
+// unused_must_use and the blanket allow(warnings) are intentionally NOT
+// suppressed: they catch silently-dropped side effects (e.g. a dead
+// Iterator::map in DocStore::commit that no-op'd dependency tracking).
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 #![allow(dead_code)]
 #![allow(unused_mut)]
 #![allow(unused_assignments)]
-#![allow(unused_must_use)]
 #![allow(clippy::derived_hash_with_manual_eq)]
 
 pub use crate::change::*;
