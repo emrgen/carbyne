@@ -530,52 +530,31 @@ impl Type {
     }
 
     fn is_string(&self) -> bool {
-        match self {
-            Type::String(_) => true,
-            _ => false,
-        }
+        matches!(self, Type::String(_))
     }
 
     fn is_mark(&self) -> bool {
-        match self {
-            Type::Mark(_) => true,
-            _ => false,
-        }
+        matches!(self, Type::Mark(_))
     }
 
     fn is_list(&self) -> bool {
-        match self {
-            Type::List(_) => true,
-            _ => false,
-        }
+        matches!(self, Type::List(_))
     }
 
     fn is_map(&self) -> bool {
-        match self {
-            Type::Map(_) => true,
-            _ => false,
-        }
+        matches!(self, Type::Map(_))
     }
 
     fn is_text(&self) -> bool {
-        match self {
-            Type::Text(_) => true,
-            _ => false,
-        }
+        matches!(self, Type::Text(_))
     }
 
     fn is_atom(&self) -> bool {
-        match self {
-            Type::Atom(_) => true,
-            _ => false,
-        }
+        matches!(self, Type::Atom(_))
     }
 
     fn is_move(&self) -> bool {
-        match self {
-            Type::Move(_) => true,
-            _ => false,
-        }
+        matches!(self, Type::Move(_))
     }
 
     pub(crate) fn on_insert(&self, child: &Type) {
@@ -790,17 +769,7 @@ impl From<ItemRef> for Type {
 
 impl From<Type> for ItemRef {
     fn from(t: Type) -> Self {
-        match t {
-            Type::List(n) => n.item_ref().clone(),
-            Type::Map(n) => n.item_ref().clone(),
-            Type::Text(n) => n.item_ref().clone(),
-            Type::String(n) => n.item_ref().clone(),
-            Type::Atom(n) => n.item_ref().clone(),
-            Type::Move(n) => n.item_ref().clone(),
-            Type::Mark(n) => n.item_ref().clone(),
-            // Type::Doc(n) => n.root.item_ref(),
-            Type::Identity => panic!("Type::into(ItemRef): not implemented"),
-        }
+        t.item_ref().clone()
     }
 }
 
