@@ -6,7 +6,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
-pub use carbyne::{Doc, Type};
+pub use carbyne::{Doc, Type, ClientState};
+
+pub mod storage;
 
 #[derive(Error, Debug)]
 pub enum BlockError {
@@ -71,7 +73,7 @@ impl BlockStore {
         })
     }
 
-    pub fn sync(&self, version_from: core::ClientState) -> Result<Vec<BlockChange>> {
+    pub fn sync(&self, version_from: ClientState) -> Result<Vec<BlockChange>> {
         let dirty_indices = self.doc.dirty_blocks(version_from);
         let root = self.doc.list();
         let current_version = self.doc.version();
@@ -212,7 +214,7 @@ impl BlockStore {
         Ok(blocks)
     }
 
-    fn rebuild_block(&self, block_id: usize, block_type: &Type, version: &core::ClientState, now: i64) -> Result<Block> {
+    fn rebuild_block(&self, block_id: usize, block_type: &Type, version: &ClientState, now: i64) -> Result<Block> {
         let (block_type_str, content, parent_id) = match block_type {
             Type::Map(m) => {
                 let bt = "block".to_string();
