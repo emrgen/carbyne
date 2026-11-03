@@ -1,22 +1,21 @@
 use crate::instance::DbId;
 use serde::{Deserialize, Serialize};
 
-/// Wire message between peers. `version` and diffs are carbyne v1 codec bytes
-/// (`ClientState::to_bytes`, `Diff::to_bytes`); carbyne types have no serde Deserialize.
+/// Wire message between peers.
+/// Phase 3.5: Ops serialized as bytes for transmission.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DbMessage {
     pub db_id: DbId,
-    /// sender's vector clock
-    pub version: Vec<u8>,
+    pub lamport: u64,
     pub message_type: DbMessageType,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DbMessageType {
-    /// "send me everything after `since`" (ClientState bytes)
+    /// "send me ops after version `since`" (ClientState bytes)
     SyncRequest { since: Vec<u8> },
-    /// Diff bytes covering the requested range
-    SyncResponse { diff: Vec<u8> },
-    /// one committed Diff, fan-out
-    OpsBroadcast { diff: Vec<u8> },
+    /// Ops (serialized) covering the requested range
+    SyncResponse { ops: Vec<u8> },
+    /// Broadcast op from peer (gossip)
+    OpsBroadcast { ops: Vec<u8> },
 }
