@@ -27,6 +27,8 @@ pub enum BlockError {
     BlockNotFound(usize),
     #[error("invalid block structure")]
     InvalidBlock,
+    #[error("doc has no \"blocks\" list; create it with doc.set(\"blocks\", doc.list())")]
+    MissingRoot,
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -103,6 +105,15 @@ impl BlockStore {
         })
     }
 
+    /// Root block list: `doc.get("blocks")`. Callers create it once with
+    /// `doc.set("blocks", doc.list())`; `doc.list()` here would mint a fresh empty list.
+    fn root(&self) -> Result<Type> {
+        self.doc
+            .get("blocks")
+            .filter(|t| matches!(t, Type::List(_)))
+            .ok_or(BlockError::MissingRoot)
+    }
+
     fn extract_instance_id(&self, block_type: &str) -> Option<String> {
         // Extract instance ID from block_type
         // Heuristic: if contains "inst-" prefix, assume text instance
@@ -120,7 +131,7 @@ impl BlockStore {
 
     pub fn sync(&self, version_from: ClientState) -> Result<Vec<BlockChange>> {
         let dirty_indices = self.doc.dirty_blocks(version_from);
-        let root = self.doc.list();
+        let root = self.root()?;
         let current_version = self.doc.version();
 
         let mut changes = Vec::new();
@@ -135,15 +146,7 @@ impl BlockStore {
         for block_id in dirty_indices {
             if let Some(block_type) = root.get(block_id) {
                 let block = self.rebuild_block(block_id, &block_type, &current_version, now)?;
-                tx.execute(
-                    "INSERT INTO blocks (id, parent_id, table_id, block_type, content, version, created_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                     ON CONFLICT(id) DO UPDATE SET
-                        parent_id = excluded.parent_id, table_id = excluded.table_id,
-                        block_type = excluded.block_type, content = excluded.content,
-                        version = excluded.version, updated_at = excluded.updated_at",
-                    params![block_id, block.parent_id, block.table_id, &block.block_type, &block.content, &block.version, now, now],
-                )?;
+                Self::upsert(&tx, &block)?;
 
 
                 // Record instance placement for this block (split/join tracking)
@@ -365,8 +368,22 @@ impl BlockStore {
         }
     }
 
+    /// One statement per block. On conflict every column but `id`/`created_at` is replaced.
+    fn upsert(tx: &rusqlite::Transaction, b: &Block) -> Result<()> {
+        tx.execute(
+            "INSERT INTO blocks (id, parent_id, table_id, block_type, content, version, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+                parent_id = excluded.parent_id, table_id = excluded.table_id,
+                block_type = excluded.block_type, content = excluded.content,
+                version = excluded.version, updated_at = excluded.updated_at",
+            params![b.id, b.parent_id, b.table_id, &b.block_type, &b.content, &b.version, b.created_at, b.updated_at],
+        )?;
+        Ok(())
+    }
+
     pub fn rebuild_all(&self) -> Result<()> {
-        let root = self.doc.list();
+        let root = self.root()?;
         let current_version = self.doc.version();
         let mut db = self.db.lock().unwrap();
 
@@ -381,10 +398,7 @@ impl BlockStore {
         for i in 0..root.size() {
             if let Some(block_type) = root.get(i as usize) {
                 let block = self.rebuild_block(i as usize, &block_type, &current_version, now)?;
-                tx.execute(
-                    "INSERT INTO blocks (id, parent_id, block_type, content, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    params![block.id, block.parent_id, &block.block_type, &block.content, &block.version, block.created_at, block.updated_at],
-                )?;
+                Self::upsert(&tx, &block)?;
             }
         }
 

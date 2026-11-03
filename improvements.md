@@ -35,8 +35,8 @@ Summary: cbdocs design is sound and matches this audit. The crate that was suppo
 | 4  | No CRDT persistence anywhere                                               | `persist.rs:41-45`, `diffstore.rs:35-39`, `changelog.rs:8,47` | All docs resident. RAM is the bill (`db/cost` §Resident memory: 10k docs × 2 MiB = 20 GiB vs 200 MiB hot cache). |
 | 5  | Archive pipeline is a stub                                                 | `archive_job.rs:153-164`, `s3_backend.rs:69-76`               | No cold tier.                                                                                                    |
 | 6  | `blocks.version` = bincode `ClientState` per row                           | `carbyne-blocks/src/lib.rs:230`                               | 8·C bytes × N rows.                                                                                              |
-| 7  | Per-row `SELECT 1` then INSERT/UPDATE                                      | `lib.rs:98-111`                                               | 2× statements.                                                                                                   |
-| 8  | No `journal_mode=WAL` / `synchronous=NORMAL`                               | `lib.rs:60-71`, `storage.rs:29-51`                            | fsync per txn.                                                                                                   |
+| 7  | Per-row `SELECT 1` then INSERT/UPDATE                                      | `lib.rs:98-111` (old)                                         | 2× statements. **DONE**: `BlockStore::upsert`, `ON CONFLICT(id) DO UPDATE`.                                      |
+| 8  | No `journal_mode=WAL` / `synchronous=NORMAL`                               | `lib.rs:60-71` (old), `storage.rs:29-51`                      | fsync per txn. **DONE** for `BlockStore`. `SessionStore` takes a caller-opened `Connection`; set pragmas there.   |
 | 9  | Fixed-width uncompressed codec; `Diff` round-trip panics                   | `codec_v1.rs:64-90,155` (old)                                 | 3–5× egress. Round-trip + panic **DONE**, see below. Varints not done.                                           |
 | 10 | `Content::Types`/`Embed` encode nothing                                    | `item.rs:1337-1342` (old)                                     | Silent data loss. **DONE**: `Embed` + full `Any` codec; `Types` is derived-only, now `unreachable!`/`Err`.       |
 | 11 | `diff()` scans all items + changes per client                              | `store.rs:1100-1116`, `change.rs:458-475` (old)               | O(history) per sync. **DONE**, see below. Also fixed: straddling string shipped wrong suffix.                    |
@@ -45,7 +45,9 @@ Summary: cbdocs design is sound and matches this audit. The crate that was suppo
 Pre-existing, found while implementing, not fixed:
 - ~~`Diff` wire round-trip panics~~ fixed under #9.
 - Remote deletes never applied: `tx.rs:174-183` shadowed `store`. **Fixed** as a prerequisite for tier 1.
-- `carbyne-blocks` does not compile on HEAD (`E0062` duplicate fields, 10 errors).
+- `carbyne-blocks` does not compile on HEAD (`E0062` duplicate fields, 10 errors). Fixed upstream since.
+- `carbyne-blocks` `BlockStore::sync`/`rebuild_all` called `doc.list()` (mints a fresh empty list) instead of reading the root block list, so every materialization was empty and every `test_tags` test failed. Now reads `doc.get("blocks")` (`BlockStore::root`, `BlockError::MissingRoot`). `rebuild_all` also dropped `table_id`.
+- Still broken, not touched: `TablePool` first id is 0 but tests assert `> 0`; `#[derive(Clone)]` deep-copies the `DashMap` so clones diverge (`test_table_pool_concurrent`, `test_blockstore_sync_preserves_tags`, `test_blockstore_untagged_blocks`). `extract_text` returns `"[string]"` placeholders. `examples/complete_pipeline.rs` imports missing `ArchiveJob`.
 
 ## Tombstone GC: when it is safe
 
@@ -149,7 +151,7 @@ Ceiling: remaining ~77 µs/diff is `ClientStore` iteration over every client plu
 Reconciled with `perf/README.md` §Recommended work order and `db/README.md` §Initial implementation policy.
 
 1. ~~**#1** `dirty_blocks`~~ done.
-2. **#8 + #7** WAL pragma + upsert in carbyne-blocks. Config-level.
+2. ~~**#8 + #7** WAL pragma + upsert in carbyne-blocks~~ done. Test: `test_tags::test_sync_upserts_in_place_and_wal`.
 3. ~~**#2** carbyne-db append-only + `ClientState` (#12)~~ done.
 4. ~~**#9** `Diff` round-trip~~ done. ~~**#10** `Types`/`Embed` encoding~~ done (`item.rs` `Any` encode/decode, all 17 shapes; `diff::test::test_encode_decode_diff` covers an `Any::Map` embed). Varints still open.
 5. ~~**#11** Range-select diff~~ done.

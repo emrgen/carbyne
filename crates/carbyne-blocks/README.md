@@ -37,6 +37,7 @@ use std::sync::Arc;
 // Create document
 let doc = Arc::new(Doc::new(Default::default()));
 let root = doc.list();
+doc.set("blocks", root.clone());
 
 // Add blocks
 for i in 0..100 {

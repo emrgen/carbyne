@@ -94,6 +94,7 @@ use carbyne_blocks::BlockStore;
 use std::sync::Arc;
 
 let doc = Arc::new(Doc::new(Default::default()));
+doc.set("blocks", doc.list()); // root block list the store materializes
 let store = BlockStore::new(doc.clone(), "doc.db")?;
 store.rebuild_all()?;
 
