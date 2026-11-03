@@ -305,6 +305,35 @@ impl Diff {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::state::ClientState;
+    use crate::Doc;
+
+    #[test]
+    fn test_non_move_change_not_flagged_as_mover() {
+        let doc = Doc::default();
+        let list = doc.list();
+        doc.set("list", list.clone());
+        let a = doc.atom("a");
+        list.append(a);
+        doc.commit();
+
+        let diff = doc.diff(ClientState::default());
+        let (changes, mover_changes) = diff.changes();
+
+        assert!(!changes.is_empty());
+        for (id, change) in &changes {
+            assert!(
+                !change.has_mover(),
+                "change {:?} with no move item flagged as mover",
+                id
+            );
+            assert!(!mover_changes.contains(id));
+        }
+    }
+}
+
 impl Serialize for Diff {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

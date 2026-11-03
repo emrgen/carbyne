@@ -149,12 +149,13 @@ impl ChangeData {
     }
 
     pub(crate) fn with_mover(mut self, moves: bool) -> Self {
-        self.flag |= ChangeNodeFlags::MOVE.bits();
+        if moves {
+            self.flag |= ChangeNodeFlags::MOVE.bits();
+        }
 
         self
     }
 }
-
 impl Eq for ChangeData {}
 
 impl PartialEq for ChangeData {
